@@ -833,6 +833,14 @@ pub const TabSidebar = extern struct {
     fn dispose(self: *Self) callconv(.c) void {
         self.disconnectTabView();
 
+        // Detach our child (the template's `root`) from AdwBin ourselves.
+        // Otherwise disposeTemplate releases `root` first and AdwBin's
+        // dispose then unparents a dead widget ("gtk_widget_unparent:
+        // assertion 'GTK_IS_WIDGET (widget)' failed"), found by the GUI
+        // test. The template still holds a ref, so `root` stays valid
+        // until disposeTemplate below.
+        self.as(adw.Bin).setChild(null);
+
         gtk.Widget.disposeTemplate(
             self.as(gtk.Widget),
             getGObjectType(),

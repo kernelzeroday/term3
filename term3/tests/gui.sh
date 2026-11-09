@@ -42,6 +42,8 @@ gtk-tabs-location = left
 gtk-sidebar-title-overflow = scroll
 confirm-close-surface = false
 quit-after-last-window-closed = true
+# No systemd scopes: the private test D-Bus session has no systemd.
+linux-cgroup = never
 EOF
 
 # --- compositor -------------------------------------------------------------
@@ -69,6 +71,11 @@ if [[ -n "${VALGRIND:-}" ]]; then
        --show-leak-kinds=definite --errors-for-leak-kinds=definite
        --suppressions="$root/valgrind.supp" --suppressions="$root/term3/tests/term3.supp"
        --log-file="$tmp/valgrind.log" "${run[@]}")
+fi
+if [[ -n "${GDB:-}" ]]; then
+  # Debugging aid: stop at the first GLib CRITICAL and print the stack.
+  export G_DEBUG=fatal-criticals
+  run=(gdb -q -batch -ex run -ex "bt 40" --args "${run[@]}")
 fi
 GHOSTTY_LOG=stderr "${run[@]}" >"$log" 2>&1 &
 app_pid=$!
@@ -131,7 +138,7 @@ echo "exit status: $status"
 
 # GTK/GLib criticals and warnings point at real bugs (bad casts, NULL
 # objects, failed assertions); our own sidebar module must log no warnings.
-if grep -E "Gtk-CRITICAL|GLib-GObject-CRITICAL|GLib-CRITICAL|Adwaita-CRITICAL|warning\(gtk_ghostty_tab_sidebar\)|panic" "$log"; then
+if grep -E "CRITICAL|Gtk-CRITICAL|warning\(gtk_ghostty_tab_sidebar\)|panic" "$log"; then
   echo "FAIL: criticals in log"; fail=1
 fi
 
