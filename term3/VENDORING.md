@@ -18,9 +18,15 @@ package (`deps/packages.txt`) into `term3-<ver>-zig-deps.tar.gz`, and the
 spec builds with `zig build --system <that dir>`, which disables fetching.
 
 Ghostty can link a system copy of many C libraries with **`-fsys=<name>`**.
-That is the unvendoring mechanism, and the RPM's `system_libs` switch (on by
-default) turns it on for what Fedora packages. Build everything bundled with
-`term3/scripts/build-rpm.sh --without system_libs`.
+That is the unvendoring mechanism. **Note:** under `zig build --system`
+(package mode, which the RPM uses) Zig turns on *every* system integration by
+default, so the spec opts out (`-fno-sys=<name>`) of whatever should stay
+bundled. The RPM's `system_libs` switch (on by default) keeps Fedora's copies.
+Build everything bundled with `term3/scripts/build-rpm.sh --without system_libs`.
+
+Verified 2026-11-09 by an offline build from the release tarballs: the binary
+links Fedora's libfontconfig, libfreetype, libharfbuzz, libpng16, libz and
+libgtk4-layer-shell.
 
 ## Status
 
@@ -43,7 +49,7 @@ bundled everywhere, including in Ghostty's own distro packages).
 | libpng | images | libpng-2.0 | 1.6.59 | **system** (`-fsys`) | already |
 | zlib | compression | Zlib | zlib-ng-compat | **system** (`-fsys`) | already |
 | oniguruma | URL/link regex | BSD-2-Clause | 6.9.10 | **system** (`-fsys`) | already |
-| libxml2 | fontconfig config parsing | MIT | 2.15.4 | **system** (`-fsys`) | already |
+| libxml2 | bundled fontconfig's config parser | MIT | 2.15.4 | **system** (via Fedora's fontconfig) | already (not built when fontconfig is system) |
 | glslang | shader compile (GLSL→SPIR-V) | BSD-3-Clause and others | 16.3.0 | bundled | candidate: add `-fsys=glslang`, test |
 | highway | SIMD dispatch | Apache-2.0 OR BSD-3-Clause | 1.3.0 | bundled | candidate: add `-fsys=highway`, test |
 | simdutf (`pkg/simdutf/vendor/`) | fast UTF-8 | Apache-2.0 OR MIT | 7.2.1 | bundled | candidate: add `-fsys=simdutf`, test (pulls in libstdc++) |
@@ -90,11 +96,11 @@ distributions package all Zig software today.
 
 In order, each step independently shippable:
 
-1. **Done in 0.1:** `-fsys` for fontconfig, freetype, harfbuzz, libpng, zlib,
-   oniguruma, libxml2, gtk4-layer-shell.
-2. **Verify the candidates:** build with `-fsys=glslang -fsys=highway
-   -fsys=simdutf`, run `term3/tests/run.sh --all`, then add them to the
-   spec's `zig_flags` and `BuildRequires`, and drop their `bundled()` Provides.
+1. **Done in 0.1:** system fontconfig, freetype, harfbuzz, libpng, zlib,
+   oniguruma, gtk4-layer-shell (and libxml2, through fontconfig).
+2. **Verify the candidates:** remove `-fno-sys=glslang`/`highway`/`simdutf`
+   from the spec's `bundled_always`, add their `BuildRequires`, build, run
+   `term3/tests/run.sh --all`, and drop their `bundled()` Provides.
 3. **Zig from Fedora** once Fedora has 0.17. This drops two sources and makes
    the SRPM buildable in Koji/COPR without network access to ziglang.org.
 4. **SPIRV-Cross:** package it for Fedora (it's used by other projects),
