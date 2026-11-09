@@ -1557,7 +1557,7 @@ title: ?[:0]const u8 = null,
 /// The class name must follow the requirements defined [in the GTK
 /// documentation](https://docs.gtk.org/gio/type_func.Application.id_is_valid.html).
 ///
-/// The default is `com.mitchellh.ghostty`.
+/// The default is `io.github.kernelzeroday.term3`.
 ///
 /// This only affects GTK builds.
 class: ?[:0]const u8 = null,
@@ -3809,14 +3809,24 @@ else
 @"gtk-titlebar": bool = true,
 
 /// Determines the side of the screen that the GTK tab bar will stick to.
-/// Top, bottom, and hidden are supported. The default is top.
+/// Top, bottom, left, right, and hidden are supported. The default is left.
+///
+/// `left` and `right` (term3) replace the horizontal tab bar with a vertical
+/// sidebar of tabs. Sidebar rows have a fixed size, so the layout doesn't
+/// change shape as tabs are added. The sidebar can be resized by dragging
+/// its inner edge and tabs can be reordered by dragging rows. See
+/// `gtk-sidebar-width`, `gtk-sidebar-title-overflow`, and
+/// `gtk-sidebar-title-lines`. When the sidebar is used, `window-show-tab-bar
+/// = auto` behaves like `always` so the terminal never jumps sideways when
+/// the second tab opens, and `gtk-titlebar-style = tabs` behaves like
+/// `native`.
 ///
 /// When `hidden` is set, a tab button displaying the number of tabs will appear
 /// in the title bar. It has the ability to open a tab overview for displaying
 /// tabs. Alternatively, you can use the `toggle_tab_overview` action in a
 /// keybind if your window doesn't have a title bar, or you can switch tabs
 /// with keybinds.
-@"gtk-tabs-location": GtkTabsLocation = .top,
+@"gtk-tabs-location": GtkTabsLocation = .left,
 
 /// If true, the close button of each tab is shown at the start of the tab
 /// (the left, in left-to-right languages) and the tab's icon at the end.
@@ -3855,6 +3865,31 @@ else
 ///
 /// The default style is `native`.
 @"gtk-titlebar-style": GtkTitlebarStyle = .native,
+
+/// The initial width in pixels of the vertical tab sidebar used when
+/// `gtk-tabs-location` is `left` or `right`. The sidebar can be resized
+/// at runtime by dragging its edge; changing this value and reloading the
+/// configuration resets open windows to the new width. GTK only (term3).
+@"gtk-sidebar-width": u32 = 220,
+
+/// How tab titles that don't fit in the vertical tab sidebar are shown.
+/// GTK only (term3).
+///
+/// Valid values are:
+///
+///  * `ellipsize` - One line, cut off with "…". The full title is in the
+///    tooltip.
+///  * `scroll` - One line. Overflowing titles scroll horizontally while the
+///    pointer is over the tab, so the whole title can be read.
+///  * `wrap` - Titles wrap onto up to `gtk-sidebar-title-lines` lines, and
+///    the rest is cut off with "…". Every tab reserves the same number of
+///    lines so tabs keep a uniform size.
+@"gtk-sidebar-title-overflow": GtkSidebarTitleOverflow = .ellipsize,
+
+/// The number of lines each tab reserves for its title when
+/// `gtk-sidebar-title-overflow` is `wrap`. Clamped to 1 through 8.
+/// GTK only (term3).
+@"gtk-sidebar-title-lines": u8 = 2,
 
 /// If `true` (default), then the Ghostty GTK tabs will be "wide." Wide tabs
 /// are the new typical Gnome style where tabs fill their available space.
@@ -9346,6 +9381,23 @@ pub const GtkSingleInstance = enum {
 pub const GtkTabsLocation = enum {
     top,
     bottom,
+    left,
+    right,
+
+    /// True if tabs are shown in a vertical sidebar rather than a tab bar.
+    pub fn isSidebar(self: GtkTabsLocation) bool {
+        return switch (self) {
+            .top, .bottom => false,
+            .left, .right => true,
+        };
+    }
+};
+
+/// See gtk-sidebar-title-overflow
+pub const GtkSidebarTitleOverflow = enum {
+    ellipsize,
+    scroll,
+    wrap,
 };
 
 /// See gtk-toolbar-style

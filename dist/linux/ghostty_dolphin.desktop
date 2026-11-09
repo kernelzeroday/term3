@@ -5,6 +5,6 @@ MimeType=inode/directory
 Actions=RunGhosttyDir
 
 [Desktop Action RunGhosttyDir]
-Name=Open Ghostty Here
-Icon=com.mitchellh.ghostty
-Exec=ghostty +new-window --working-directory=%F
+Name=Open term3 Here
+Icon=io.github.kernelzeroday.term3
+Exec=term3 +new-window --working-directory=%F

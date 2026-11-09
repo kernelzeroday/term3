@@ -246,14 +246,14 @@ fn addLinuxAppResources(
     // Background:
     // https://developer.gnome.org/documentation/guidelines/maintainer/integrating.html
 
-    const name = b.fmt("Ghostty{s}", .{
+    const name = b.fmt("term3{s}", .{
         switch (cfg.optimize) {
             .debug, .safe => " (Debug)",
             .fast, .small => "",
         },
     });
 
-    const app_id = b.fmt("com.mitchellh.ghostty{s}", .{
+    const app_id = b.fmt("io.github.kernelzeroday.term3{s}", .{
         switch (cfg.optimize) {
             .debug, .safe => "-debug",
             .fast, .small => "",
@@ -261,7 +261,7 @@ fn addLinuxAppResources(
     });
 
     // How the files below launch Ghostty. See -Dinstalled-exe-path.
-    const exe = cfg.installed_exe_path orelse "ghostty";
+    const exe = cfg.installed_exe_path orelse "term3";
 
     // Variables used by the templates.
     // Fields are nullable since unused fields trigger a build failure.
@@ -364,61 +364,61 @@ fn addLinuxAppResources(
     // Right click menu action for Plasma desktop
     try steps.append(b.allocator, &b.addInstallFile(
         b.path("dist/linux/ghostty_dolphin.desktop"),
-        "share/kio/servicemenus/com.mitchellh.ghostty.desktop",
+        "share/kio/servicemenus/io.github.kernelzeroday.term3.desktop",
     ).step);
 
     // Right click menu action for Nautilus. Note that this _must_ be named
     // `ghostty.py`. Using the full app id causes problems (see #5468).
     try steps.append(b.allocator, &b.addInstallFile(
         b.path("dist/linux/ghostty_nautilus.py"),
-        "share/nautilus-python/extensions/ghostty.py",
+        "share/nautilus-python/extensions/term3.py",
     ).step);
 
     // Various icons that our application can use, including the icon
     // that will be used for the desktop.
     try steps.append(b.allocator, &b.addInstallFile(
         b.path("images/gnome/16.png"),
-        "share/icons/hicolor/16x16/apps/com.mitchellh.ghostty.png",
+        "share/icons/hicolor/16x16/apps/io.github.kernelzeroday.term3.png",
     ).step);
     try steps.append(b.allocator, &b.addInstallFile(
         b.path("images/gnome/32.png"),
-        "share/icons/hicolor/32x32/apps/com.mitchellh.ghostty.png",
+        "share/icons/hicolor/32x32/apps/io.github.kernelzeroday.term3.png",
     ).step);
     try steps.append(b.allocator, &b.addInstallFile(
         b.path("images/gnome/128.png"),
-        "share/icons/hicolor/128x128/apps/com.mitchellh.ghostty.png",
+        "share/icons/hicolor/128x128/apps/io.github.kernelzeroday.term3.png",
     ).step);
     try steps.append(b.allocator, &b.addInstallFile(
         b.path("images/gnome/256.png"),
-        "share/icons/hicolor/256x256/apps/com.mitchellh.ghostty.png",
+        "share/icons/hicolor/256x256/apps/io.github.kernelzeroday.term3.png",
     ).step);
     try steps.append(b.allocator, &b.addInstallFile(
         b.path("images/gnome/512.png"),
-        "share/icons/hicolor/512x512/apps/com.mitchellh.ghostty.png",
+        "share/icons/hicolor/512x512/apps/io.github.kernelzeroday.term3.png",
     ).step);
     // Flatpaks only support icons up to 512x512.
     if (!cfg.flatpak) {
         try steps.append(b.allocator, &b.addInstallFile(
             b.path("images/gnome/1024.png"),
-            "share/icons/hicolor/1024x1024/apps/com.mitchellh.ghostty.png",
+            "share/icons/hicolor/1024x1024/apps/io.github.kernelzeroday.term3.png",
         ).step);
     }
 
     try steps.append(b.allocator, &b.addInstallFile(
         b.path("images/gnome/32.png"),
-        "share/icons/hicolor/16x16@2/apps/com.mitchellh.ghostty.png",
+        "share/icons/hicolor/16x16@2/apps/io.github.kernelzeroday.term3.png",
     ).step);
     try steps.append(b.allocator, &b.addInstallFile(
         b.path("images/gnome/64.png"),
-        "share/icons/hicolor/32x32@2/apps/com.mitchellh.ghostty.png",
+        "share/icons/hicolor/32x32@2/apps/io.github.kernelzeroday.term3.png",
     ).step);
     try steps.append(b.allocator, &b.addInstallFile(
         b.path("images/gnome/256.png"),
-        "share/icons/hicolor/128x128@2/apps/com.mitchellh.ghostty.png",
+        "share/icons/hicolor/128x128@2/apps/io.github.kernelzeroday.term3.png",
     ).step);
     try steps.append(b.allocator, &b.addInstallFile(
         b.path("images/gnome/512.png"),
-        "share/icons/hicolor/256x256@2/apps/com.mitchellh.ghostty.png",
+        "share/icons/hicolor/256x256@2/apps/io.github.kernelzeroday.term3.png",
     ).step);
 }
 

@@ -10,7 +10,7 @@
   <url type="contribute">https://github.com/ghostty-org/ghostty/blob/main/CONTRIBUTING.md</url>
   <url type="translate">https://github.com/ghostty-org/ghostty/blob/main/po/README_TRANSLATORS.md</url>
   <url type="vcs-browser">https://github.com/ghostty-org/ghostty</url>
-  <summary>Ghostty is a fast, feature-rich, and cross-platform terminal emulator</summary>
+  <summary>A terminal emulator with tabs on the left, based on Ghostty</summary>
   <metadata_license>MIT</metadata_license>
   <project_license>MIT</project_license>
   <content_rating type="oars-1.1" />
@@ -38,7 +38,7 @@
     -->
     <display_length compare="ge">360</display_length>
   </requires>
-  <translation type="gettext">com.mitchellh.ghostty</translation>
+  <translation type="gettext">io.github.kernelzeroday.term3</translation>
 
   <!--
     TODO: Generate manifest location data.

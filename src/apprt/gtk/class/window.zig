@@ -25,6 +25,8 @@ const CloseConfirmationDialog = @import("close_confirmation_dialog.zig").CloseCo
 const SplitTree = @import("split_tree.zig").SplitTree;
 const Surface = @import("surface.zig").Surface;
 const Tab = @import("tab.zig").Tab;
+const TabSidebar = @import("tab_sidebar.zig").TabSidebar;
+const TabSidebarSide = @import("tab_sidebar.zig").Side;
 const DebugWarning = @import("debug_warning.zig").DebugWarning;
 const CommandPalette = @import("command_palette.zig").CommandPalette;
 const WeakRef = @import("../weak_ref.zig").WeakRef;
@@ -210,6 +212,22 @@ pub const Window = extern struct {
             );
         };
 
+        /// term3: whether the vertical tab sidebar is shown.
+        pub const @"sidebar-visible" = struct {
+            pub const name = "sidebar-visible";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                bool,
+                .{
+                    .default = true,
+                    .accessor = gobject.ext.typedAccessor(Self, bool, .{
+                        .getter = Self.getSidebarVisible,
+                    }),
+                },
+            );
+        };
+
         pub const @"toolbar-style" = struct {
             pub const name = "toolbar-style";
             const impl = gobject.ext.defineProperty(
@@ -298,6 +316,9 @@ pub const Window = extern struct {
         tab_overview: *adw.TabOverview,
         tab_bar: *adw.TabBar,
         tab_view: *adw.TabView,
+        tab_sidebar: *TabSidebar,
+        content_box: *gtk.Box,
+        terminal_box: *gtk.Box,
         toolbar: *adw.ToolbarView,
         toast_overlay: *adw.ToastOverlay,
 
@@ -704,6 +725,7 @@ pub const Window = extern struct {
             "tabs-wide",
             "toolbar-style",
             "titlebar-style",
+            "sidebar-visible",
         }) |key| {
             self.as(gobject.Object).notifyByPspec(
                 @field(properties, key).impl.param_spec,
@@ -719,11 +741,32 @@ pub const Window = extern struct {
             config.@"background-opacity" >= 1,
         );
 
-        // Move the tab bar to the proper location.
+        // Move the tab bar to the proper location. With a sidebar the tab
+        // bar stays at the top but is hidden (see getTabsVisible).
         priv.toolbar.remove(priv.tab_bar.as(gtk.Widget));
         switch (config.@"gtk-tabs-location") {
-            .top => priv.toolbar.addTopBar(priv.tab_bar.as(gtk.Widget)),
+            .top, .left, .right => priv.toolbar.addTopBar(priv.tab_bar.as(gtk.Widget)),
             .bottom => priv.toolbar.addBottomBar(priv.tab_bar.as(gtk.Widget)),
+        }
+
+        // term3: place and configure the tab sidebar.
+        {
+            const side: TabSidebarSide = switch (config.@"gtk-tabs-location") {
+                .right => .right,
+                .top, .bottom, .left => .left,
+            };
+            const sidebar = priv.tab_sidebar.as(gtk.Widget);
+            const terminal = priv.terminal_box.as(gtk.Widget);
+            switch (side) {
+                .left => priv.content_box.reorderChildAfter(terminal, sidebar),
+                .right => priv.content_box.reorderChildAfter(sidebar, terminal),
+            }
+            priv.tab_sidebar.setOptions(.{
+                .side = side,
+                .width = config.@"gtk-sidebar-width",
+                .overflow = config.@"gtk-sidebar-title-overflow",
+                .title_lines = config.@"gtk-sidebar-title-lines",
+            });
         }
 
         // Do our window-protocol specific appearance sync.
@@ -1090,7 +1133,7 @@ pub const Window = extern struct {
             return false;
         }
 
-        return switch (config.@"gtk-titlebar-style") {
+        return switch (self.getTitlebarStyle()) {
             // If the titlebar style is tabs never show the titlebar.
             .tabs => false,
 
@@ -1104,7 +1147,7 @@ pub const Window = extern struct {
         const priv = self.private();
         const config = if (priv.config) |v| v.get() else return true;
 
-        return switch (config.@"gtk-titlebar-style") {
+        return switch (self.getTitlebarStyle()) {
             // If the titlebar style is tabs we cannot autohide.
             .tabs => false,
 
@@ -1126,7 +1169,10 @@ pub const Window = extern struct {
         const priv = self.private();
         const config = if (priv.config) |v| v.get() else return true;
 
-        switch (config.@"gtk-titlebar-style") {
+        // term3: the sidebar replaces the tab bar.
+        if (config.@"gtk-tabs-location".isSidebar()) return false;
+
+        switch (self.getTitlebarStyle()) {
             .tabs => {
                 // *Conditionally* disable the tab bar when maximized, the titlebar
                 // style is tabs, and gtk-titlebar-hide-when-maximized is set.
@@ -1169,7 +1215,27 @@ pub const Window = extern struct {
     fn getTitlebarStyle(self: *Self) TitlebarStyle {
         const priv = self.private();
         const config = if (priv.config) |v| v.get() else return .native;
+
+        // term3: the `tabs` titlebar merges the tab bar into the titlebar,
+        // which doesn't exist when tabs are in the sidebar.
+        if (config.@"gtk-tabs-location".isSidebar()) return .native;
+
         return config.@"gtk-titlebar-style";
+    }
+
+    /// term3: the sidebar is shown when tabs are on the left or right,
+    /// unless the tab bar is disabled entirely. `window-show-tab-bar = auto`
+    /// shows it even with one tab so the terminal never shifts sideways
+    /// when a second tab opens.
+    fn getSidebarVisible(self: *Self) bool {
+        const priv = self.private();
+        const config = if (priv.config) |v| v.get() else return false;
+        if (!config.@"gtk-tabs-location".isSidebar()) return false;
+        if (priv.quick_terminal) return false;
+        return switch (config.@"window-show-tab-bar") {
+            .always, .auto => true,
+            .never => false,
+        };
     }
 
     fn propConfig(
@@ -2016,22 +2082,24 @@ pub const Window = extern struct {
         _: ?*glib.Variant,
         self: *Self,
     ) callconv(.c) void {
-        const name = "Ghostty";
-        const icon = "com.mitchellh.ghostty";
-        const website = "https://ghostty.org";
+        const name = "term3";
+        const icon = build_config.bundle_id;
+        const website = "https://github.com/kernelzeroday/term3";
 
         adw.showAboutDialog(
             self.as(gtk.Widget),
             "application-name",
             name,
             "developer-name",
-            i18n._("Ghostty Developers"),
+            "kernelzeroday",
+            "comments",
+            "Ghostty with tabs on the left.\nBased on Ghostty by Mitchell Hashimoto and the Ghostty developers (https://ghostty.org).",
             "application-icon",
             icon,
             "version",
             build_config.version_string.ptr,
             "issue-url",
-            "https://github.com/ghostty-org/ghostty/issues",
+            "https://github.com/kernelzeroday/term3/issues",
             "website",
             website,
             @as(?*anyopaque, null),
@@ -2313,6 +2381,7 @@ pub const Window = extern struct {
             gobject.ext.ensureType(SplitTree);
             gobject.ext.ensureType(Surface);
             gobject.ext.ensureType(Tab);
+            gobject.ext.ensureType(TabSidebar);
             gtk.Widget.Class.setTemplateFromResource(
                 class.as(gtk.Widget.Class),
                 comptime gresource.blueprint(.{
@@ -2332,6 +2401,7 @@ pub const Window = extern struct {
                 properties.@"tabs-autohide".impl,
                 properties.@"tabs-inverted".impl,
                 properties.@"tabs-visible".impl,
+                properties.@"sidebar-visible".impl,
                 properties.@"tabs-wide".impl,
                 properties.@"toolbar-style".impl,
                 properties.@"titlebar-style".impl,
@@ -2342,6 +2412,9 @@ pub const Window = extern struct {
             class.bindTemplateChildPrivate("tab_overview", .{});
             class.bindTemplateChildPrivate("tab_bar", .{});
             class.bindTemplateChildPrivate("tab_view", .{});
+            class.bindTemplateChildPrivate("tab_sidebar", .{});
+            class.bindTemplateChildPrivate("content_box", .{});
+            class.bindTemplateChildPrivate("terminal_box", .{});
             class.bindTemplateChildPrivate("toolbar", .{});
             class.bindTemplateChildPrivate("toast_overlay", .{});
 

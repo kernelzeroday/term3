@@ -1,7 +1,9 @@
 const builtin = @import("builtin");
 
 /// Base application ID
-pub const base_application_id = "com.mitchellh.ghostty";
+// term3: our app identity. (resource_path below is internal to the binary
+// and intentionally left as upstream to keep the patch small.)
+pub const base_application_id = "io.github.kernelzeroday.term3";
 
 /// GTK application ID
 pub const application_id = switch (builtin.mode) {

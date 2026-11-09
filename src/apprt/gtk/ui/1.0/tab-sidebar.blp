@@ -1,0 +1,68 @@
+using Gtk 4.0;
+using Adw 1;
+
+// term3: a vertical list of the tabs in an Adw.TabView, shown at the left
+// or right of a window in place of Adw.TabBar. Rows are created in code
+// (see class/tab_sidebar.zig) from the tab view's page model.
+template $GhosttyTabSidebar: Adw.Bin {
+  styles [
+    "tab-sidebar",
+  ]
+
+  Gtk.Box root {
+    orientation: horizontal;
+
+    Gtk.Box content {
+      orientation: vertical;
+      hexpand: true;
+
+      Gtk.ScrolledWindow {
+        hscrollbar-policy: never;
+        vexpand: true;
+
+        Gtk.ListBox list {
+          styles [
+            "navigation-sidebar",
+          ]
+
+          selection-mode: single;
+          activate-on-single-click: true;
+          focusable: false;
+          row-selected => $row_selected();
+        }
+      }
+    }
+
+    // The resize handle. It is moved to the start of `root` when the
+    // sidebar is on the right of the window.
+    Gtk.Separator handle {
+      styles [
+        "tab-sidebar-handle",
+      ]
+
+      orientation: vertical;
+    }
+
+    // The tab context menu. Popovers are positioned relative to their
+    // parent rather than laid out, so it lives in the box like Ghostty's
+    // surface context menu does.
+    Gtk.PopoverMenu row_popover {
+      menu-model: row_menu;
+      halign: start;
+      has-arrow: false;
+    }
+  }
+}
+
+menu row_menu {
+  item {
+    label: _("Change Tab Title…");
+    action: "win.prompt-tab-title";
+  }
+
+  item {
+    label: _("Close Tab");
+    action: "win.close-tab";
+    target: "this";
+  }
+}

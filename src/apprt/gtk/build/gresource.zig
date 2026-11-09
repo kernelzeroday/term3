@@ -48,6 +48,7 @@ pub const blueprints: []const Blueprint = &.{
     .{ .major = 1, .minor = 0, .name = "surface" },
     .{ .major = 1, .minor = 0, .name = "surface-scrolled-window" },
     .{ .major = 1, .minor = 0, .name = "tab" },
+    .{ .major = 1, .minor = 0, .name = "tab-sidebar" },
     .{ .major = 1, .minor = 3, .name = "debug-warning" },
     .{ .major = 1, .minor = 3, .name = "surface-child-exited" },
     .{ .major = 1, .minor = 4, .name = "inspector-window" },

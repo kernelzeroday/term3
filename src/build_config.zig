@@ -55,7 +55,8 @@ pub const i18n: bool = config.i18n;
 /// There are many places that don't use this variable so simply swapping
 /// this variable is NOT ENOUGH to change the bundle ID. I just wanted to
 /// avoid it in Zig coe as much as possible.
-pub const bundle_id = "com.mitchellh.ghostty";
+// term3: our app identity (also the gettext domain on Linux).
+pub const bundle_id = "io.github.kernelzeroday.term3";
 
 /// True if we should have "slow" runtime safety checks. The initial motivation
 /// for this was terminal page/pagelist integrity checks. These were VERY

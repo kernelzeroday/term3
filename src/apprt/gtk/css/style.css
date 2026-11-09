@@ -230,3 +230,50 @@ label.resize-overlay {
   margin: 0;
   padding: 0;
 }
+
+/*
+ * term3: vertical tab sidebar
+ */
+
+.tab-sidebar {
+  background-color: var(--sidebar-bg-color, var(--headerbar-bg-color));
+  color: var(--sidebar-fg-color, var(--headerbar-fg-color));
+}
+
+.tab-sidebar list.navigation-sidebar {
+  background: none;
+}
+
+.tab-sidebar-row {
+  min-height: 32px;
+}
+
+.tab-sidebar-title {
+  font-size: 0.95em;
+}
+
+/* Only show a tab's close button on hover or when it's selected, so long
+ * titles get the full width otherwise. Opacity rather than visibility keeps
+ * every row the same shape. */
+.tab-sidebar-row .tab-sidebar-close {
+  opacity: 0;
+  min-width: 22px;
+  min-height: 22px;
+  padding: 0;
+}
+
+.tab-sidebar-row:hover .tab-sidebar-close,
+.tab-sidebar-row:selected .tab-sidebar-close {
+  opacity: 1;
+}
+
+.tab-sidebar-attention {
+  color: var(--accent-color);
+  -gtk-icon-size: 8px;
+}
+
+/* The resize handle. */
+.tab-sidebar-handle {
+  min-width: 4px;
+  background-color: alpha(currentColor, 0.08);
+}

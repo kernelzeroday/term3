@@ -1,3 +1,8 @@
+> [!NOTE]
+> **This is term3**, a fork of Ghostty whose one opinion is a vertical tab
+> sidebar on the left. See [TERM3.md](TERM3.md). Everything below is
+> upstream Ghostty's README.
+
 <!-- LOGO -->
 <h1>
 <p align="center">

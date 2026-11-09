@@ -2,10 +2,10 @@
 Version=1.0
 Name=@NAME@
 Type=Application
-Comment=A terminal emulator
+Comment=A terminal emulator with tabs on the left
 TryExec=@GHOSTTY@
 Exec=@GHOSTTY@ --gtk-single-instance=true
-Icon=com.mitchellh.ghostty
+Icon=io.github.kernelzeroday.term3
 Categories=System;TerminalEmulator;
 Keywords=terminal;tty;pty;
 StartupNotify=true

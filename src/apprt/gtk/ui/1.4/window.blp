@@ -152,8 +152,25 @@ template $GhosttyWindow: Adw.ApplicationWindow {
         }
       }
 
-      Box {
+      // term3: the tab sidebar sits beside the terminal area, below the
+      // header bar. It is moved after `terminal_box` when the sidebar is on
+      // the right.
+      Box content_box {
+        orientation: horizontal;
+
+        $GhosttyTabSidebar tab_sidebar {
+          // Explicitly not expanding: the sidebar is exactly as wide as
+          // configured or dragged to, and never takes a share of spare
+          // window width. (Without this, hexpand propagates up from its
+          // children.)
+          hexpand: false;
+          tab-view: tab_view;
+          visible: bind template.sidebar-visible;
+        }
+
+        Box terminal_box {
         orientation: vertical;
+        hexpand: true;
 
         $GhosttyDebugWarning {
           visible: bind template.debug;
@@ -171,6 +188,7 @@ template $GhosttyWindow: Adw.ApplicationWindow {
             menu-model: tab_context_menu;
             shortcuts: none;
           }
+        }
         }
       }
     }
