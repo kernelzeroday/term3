@@ -36,8 +36,11 @@ term3/scripts/build-rpm.sh
 out="term3/out"
 mapfile -t assets < <(find "$out/rpmbuild/RPMS" "$out/rpmbuild/SRPMS" -name '*.rpm'; \
                       ls "$out/term3-$ver.tar.gz" "$out/term3-$ver-zig-deps.tar.gz")
-(cd "$out" && sha256sum "${assets[@]/#$out\//}" > "SHA256SUMS-$ver") 2>/dev/null ||
-  sha256sum "${assets[@]}" > "$out/SHA256SUMS-$ver"
+# Checksums by bare file name, as GitHub serves them: it replaces "~" in
+# asset names with "." (term3-0.1.0~rc.1-...rpm -> term3-0.1.0.rc.1-...rpm).
+for f in "${assets[@]}"; do
+  printf '%s  %s\n' "$(sha256sum "$f" | cut -d' ' -f1)" "$(basename "$f" | tr '~' '.')"
+done > "$out/SHA256SUMS-$ver"
 assets+=("$out/SHA256SUMS-$ver")
 printf 'artifact: %s\n' "${assets[@]}"
 
@@ -59,10 +62,15 @@ fi
 
 git push origin "$tag"
 pre=(); [[ "$ver" == *-* ]] && pre=(--prerelease)
-gh release create "$tag" "${pre[@]}" --title "term3 $ver" \
+# Always name the repo: gh otherwise guesses from the remotes and may pick
+# `upstream` (ghostty-org/ghostty).
+repo="$(git remote get-url origin | sed -E 's#^(https://github.com/|git@github.com:)##; s#\.git$##')"
+[[ "$repo" != ghostty-org/* ]] || die "origin points at upstream ($repo)"
+gh release create "$tag" -R "$repo" "${pre[@]}" --title "term3 $ver" \
   --notes "Based on Ghostty $gver.
 
 $notes
 
-Install: \`sudo dnf install ./term3-$(term3/scripts/version.sh --rpm)-1.<dist>.<arch>.rpm\`" \
+Install: \`sudo dnf install ./term3-$(term3/scripts/version.sh --rpm | tr '~' '.')-1.<dist>.<arch>.rpm\`
+Verify: \`sha256sum -c SHA256SUMS-$ver\`" \
   "${assets[@]}"
