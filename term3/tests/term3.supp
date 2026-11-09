@@ -22,3 +22,15 @@
    ...
    fun:FcDirCacheWrite
 }
+{
+   mesa_egl_initialize_config_arrays
+   # Mesa allocates its EGLConfig arrays once in eglInitialize() and never
+   # frees them before exit (seen with the Wayland swrast platform used by
+   # the headless GUI test). Not term3/Ghostty memory.
+   Memcheck:Leak
+   match-leak-kinds: definite
+   fun:calloc
+   fun:_eglCreateArray
+   ...
+   fun:eglInitialize
+}

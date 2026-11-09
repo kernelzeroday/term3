@@ -81,8 +81,10 @@ GHOSTTY_LOG=stderr "${run[@]}" >"$log" 2>&1 &
 app_pid=$!
 
 act() { # act <action> [gvariant-params]
-  gdbus call --session --dest "$appid" --object-path "$objpath" \
-    --method org.gtk.Actions.Activate "$1" "${2:-[]}" '{}' >/dev/null
+  # org.gtk.Actions.Activate takes (s av a{sv}); type the empty values
+  # explicitly so gdbus doesn't guess wrong.
+  gdbus call --session --timeout $((25 * slow)) --dest "$appid" --object-path "$objpath" \
+    --method org.gtk.Actions.Activate "$1" "${2:-@av []}" '@a{sv} {}' >/dev/null
 }
 
 # Wait for the app to own its bus name.
@@ -100,6 +102,14 @@ alive() {
     echo "FAIL: term3 exited during: $1"; fail=1; return 1
   fi
 }
+
+# Wait for the first window's terminal; tabs requested before it exists
+# would open as separate windows instead.
+for _ in $(seq $((100 * slow))); do
+  grep -qE "surface content scale|render surface realize" "$log" && break
+  kill -0 "$app_pid" 2>/dev/null || break
+  sleep 0.1
+done
 
 step "app started"; alive "startup" || true
 
@@ -135,6 +145,15 @@ status=0; wait "$app_pid" || status=$?
 app_pid=""
 echo "exit status: $status"
 [[ $status -eq 0 ]] || { echo "FAIL: non-zero exit"; fail=1; }
+
+# Every terminal must have been created: the first window, 12 tabs, and the
+# second window. (Release builds log "surface content scale", debug builds
+# "render surface realize", once per terminal.)
+surfaces=$(grep -cE "surface content scale" "$log" || true)
+realized=$(grep -cE "render surface realize" "$log" || true)
+(( realized > surfaces )) && surfaces=$realized
+echo "terminals created: $surfaces (expected 14)"
+[[ $surfaces -eq 14 ]] || { echo "FAIL: expected 14 terminals"; fail=1; }
 
 # GTK/GLib criticals and warnings point at real bugs (bad casts, NULL
 # objects, failed assertions); our own sidebar module must log no warnings.
