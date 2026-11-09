@@ -33,7 +33,9 @@ First release candidate. Built on Ghostty 1.4.1-dev (main at f28124c73).
 - RPM packaging (`term3/scripts/build-rpm.sh`). It uses Fedora system
   libraries where available and is built offline.
 - Test suite: unit, property, config, CLI smoke and headless GUI tests,
-  plus valgrind (`term3/tests/run.sh`).
+  plus valgrind (`term3/tests/run.sh`). For this release: 98 unit/property/
+  config tests, 14 smoke checks, and the GUI tier (12 tabs and 2 windows, no
+  GTK criticals) all pass. Valgrind reports 0 errors and 0 bytes definitely lost.
 
 ### Known limitations
 - A `font-family` set only in a nested `config-file` include is added after

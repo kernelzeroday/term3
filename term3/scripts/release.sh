@@ -3,13 +3,15 @@
 #
 #   term3/scripts/release.sh            check, test, build RPMs, tag, then ask before pushing
 #   term3/scripts/release.sh --dry-run  everything except tagging and publishing
+#   term3/scripts/release.sh --yes      publish without asking (non-interactive)
 #
 # Publishing pushes the tag to origin and creates a GitHub release (marked
 # pre-release for -rc versions) with the RPMs, SRPM and sources attached.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$root"
-dry=0; [[ "${1:-}" == "--dry-run" ]] && dry=1
+dry=0; yes=0
+case "${1:-}" in --dry-run) dry=1 ;; --yes) yes=1 ;; esac
 
 ver="$(term3/scripts/version.sh)"
 tag="$(term3/scripts/version.sh --tag)"
@@ -50,8 +52,10 @@ $notes"
 echo "created tag $tag"
 
 # --- publish (asks first) ---------------------------------------------------
-read -r -p "Push $tag to origin and publish the GitHub release? [y/N] " yn
-[[ "$yn" == [yY]* ]] || { echo "not published. Later: git push origin $tag && gh release create ..."; exit 0; }
+if [[ $yes -ne 1 ]]; then
+  read -r -p "Push $tag to origin and publish the GitHub release? [y/N] " yn || yn=n
+  [[ "$yn" == [yY]* ]] || { echo "not published. Later: git push origin $tag && gh release create ..."; exit 0; }
+fi
 
 git push origin "$tag"
 pre=(); [[ "$ver" == *-* ]] && pre=(--prerelease)
