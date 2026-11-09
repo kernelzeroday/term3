@@ -25,12 +25,23 @@ fi
 echo "==> source tarball (term3-$ver)"
 git archive --format=tar.gz --prefix="term3-$ver/" -o "$out/term3-$ver.tar.gz" HEAD
 
-echo "==> zig packages"
-deps_tmp="$(mktemp -d)"
-trap 'rm -rf "$deps_tmp"' EXIT
-ZIG_GLOBAL_CACHE_DIR="$deps_tmp/cache" ./nix/build-support/fetch-zig-cache.sh deps/packages.txt
-mv "$deps_tmp/cache/p" "$deps_tmp/term3-$ver-zig-deps"
-tar -C "$deps_tmp" -czf "$out/term3-$ver-zig-deps.tar.gz" "term3-$ver-zig-deps"
+# The Zig packages only change when build.zig.zon does, so reuse the
+# tarball unless it's missing, stale, or --force is given (it's ~214 MB).
+deps="$out/term3-$ver-zig-deps.tar.gz"
+stamp="$out/.zig-deps-$ver.sha256"
+want="$(sha256sum deps/packages.json | cut -d' ' -f1)"
+if [[ "${1:-}" == "--force" || ! -s "$deps" || "$(cat "$stamp" 2>/dev/null)" != "$want" ]]; then
+  echo "==> zig packages"
+  # On /home, not /tmp: unpacked this is ~1 GB, too big for a small tmpfs.
+  deps_tmp="$(mktemp -d -p "$out")"
+  trap 'rm -rf "$deps_tmp"' EXIT
+  ZIG_GLOBAL_CACHE_DIR="$deps_tmp/cache" ./nix/build-support/fetch-zig-cache.sh deps/packages.txt
+  mv "$deps_tmp/cache/p" "$deps_tmp/term3-$ver-zig-deps"
+  tar -C "$deps_tmp" -czf "$deps" "term3-$ver-zig-deps"
+  echo "$want" >"$stamp"
+else
+  echo "==> zig packages: up to date ($deps)"
+fi
 
 echo "==> zig $zigver_pinned toolchains"
 for arch in x86_64 aarch64; do
