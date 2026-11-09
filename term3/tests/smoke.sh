@@ -58,6 +58,10 @@ check "config is read from ~/.config/term3/config" bash -c "
   echo 'gtk-sidebar-width = 345' > '$XDG_CONFIG_HOME/term3/config' &&
   '$bin' +show-config | grep -qxF 'gtk-sidebar-width = 345'"
 
+ti="$(dirname "$bin")/../share/term3/terminfo"
+check "private terminfo describes xterm-ghostty with E3 (Ctrl+L clears scrollback)" \
+  bash -c "TERMINFO='$ti' infocmp -x xterm-ghostty | grep -qF 'E3=\\E[3J'"
+
 echo
 echo "smoke: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

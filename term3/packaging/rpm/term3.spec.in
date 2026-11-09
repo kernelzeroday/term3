@@ -43,6 +43,8 @@ ExclusiveArch:  x86_64 aarch64
 
 BuildRequires:  blueprint-compiler
 BuildRequires:  gettext
+# tic compiles term3's private terminfo database (%%{_datadir}/term3/terminfo).
+BuildRequires:  ncurses
 BuildRequires:  pkgconfig(gtk4)
 BuildRequires:  pkgconfig(libadwaita-1)
 BuildRequires:  pkgconfig(x11)
@@ -57,8 +59,6 @@ BuildRequires:  pkgconfig(zlib)
 BuildRequires:  pkgconfig(oniguruma)
 %endif
 
-# Terminfo for TERM=xterm-ghostty, which term3 keeps for compatibility.
-Requires:       ncurses-term
 Requires:       hicolor-icon-theme
 
 # Bundled copies (see term3/VENDORING.md).
@@ -142,6 +142,9 @@ rm -rf %{buildroot}%{_datadir}/bash-completion \
 %check
 desktop-file-validate %{buildroot}%{_datadir}/applications/%{appid}.desktop || :
 %{buildroot}%{_bindir}/term3 +version | grep -q '^term3 %{tarball_version} '
+# The private terminfo must describe TERM=xterm-ghostty including E3 (clear
+# scrollback), which bash's Ctrl+L uses. Regression from 0.1.0-rc.1.
+TERMINFO=%{buildroot}%{_datadir}/term3/terminfo infocmp -x xterm-ghostty | grep -qF 'E3=\E[3J'
 
 %files -f %{appid}.lang
 %license LICENSE

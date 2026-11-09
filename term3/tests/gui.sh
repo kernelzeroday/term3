@@ -117,6 +117,13 @@ step "app started"; alive "startup" || true
 # subtitle and marquee paths), then idle.
 cat >"$tmp/tab.sh" <<'EOS'
 #!/bin/sh
+# Probe the terminal description the tab's programs see (regression for
+# rc.1, where TERM=xterm-ghostty was missing from the terminfo database).
+{
+  echo "TERM=$TERM TERMINFO=$TERMINFO"
+  tput clear >/dev/null 2>&1 && echo clear-ok
+  tput E3 >/dev/null 2>&1 && echo e3-ok
+} >"$(dirname "$0")/tab-$1.env"
 cd /tmp
 printf '\033]0;tab %s with a long title for the sidebar marquee\007' "$1"
 printf '\033]7;file://%s/tmp\007' "$(hostname)"
@@ -154,6 +161,15 @@ realized=$(grep -cE "render surface realize" "$log" || true)
 (( realized > surfaces )) && surfaces=$realized
 echo "terminals created: $surfaces (expected 14)"
 [[ $surfaces -eq 14 ]] || { echo "FAIL: expected 14 terminals"; fail=1; }
+
+# Programs inside a tab must find the terminal's terminfo, including E3,
+# which bash's Ctrl+L (readline clear-screen) uses to clear scrollback.
+if grep -q clear-ok "$tmp/tab-1.env" 2>/dev/null && grep -q e3-ok "$tmp/tab-1.env"; then
+  echo "terminfo inside tab: ok ($(head -1 "$tmp/tab-1.env"))"
+else
+  echo "FAIL: terminfo inside tab: $(cat "$tmp/tab-1.env" 2>/dev/null || echo 'no probe output')"
+  fail=1
+fi
 
 # GTK/GLib criticals and warnings point at real bugs (bad casts, NULL
 # objects, failed assertions); our own sidebar module must log no warnings.

@@ -63,6 +63,8 @@ pub fn resourcesDir(alloc: Allocator) !ResourcesDir {
         .windows => .{"terminfo/ghostty.terminfo"},
         .macos => .{"terminfo/78/xterm-ghostty"},
         .freebsd => .{ "site-terminfo/g/ghostty", "site-terminfo/x/xterm-ghostty" },
+        // term3: our terminfo lives inside our resources dir.
+        .linux => .{"term3/terminfo/x/xterm-ghostty"},
         else => .{ "terminfo/g/ghostty", "terminfo/x/xterm-ghostty" },
     };
 

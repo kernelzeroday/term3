@@ -89,7 +89,14 @@ pub fn init(b: *std.Build, cfg: *const Config, deps: *const SharedDeps) !Ghostty
             const install_step = b.addInstallDirectory(.{
                 .source_dir = path,
                 .install_dir = .{ .custom = "share" },
-                .install_subdir = terminfo_share_dir,
+                // term3: a private terminfo database (share/term3/terminfo)
+                // so it can't conflict with ncurses-term or a Ghostty
+                // package. Fedora's ncurses-term only has `ghostty`, not
+                // `xterm-ghostty`, so the system database isn't enough.
+                .install_subdir = if (os_tag == .linux)
+                    "term3/terminfo"
+                else
+                    terminfo_share_dir,
             });
             try steps.append(b.allocator, &install_step.step);
         }

@@ -3,6 +3,28 @@
 term3 versions follow [semver](https://semver.org); see [RELEASING.md](RELEASING.md).
 Each release notes the Ghostty version it is built on.
 
+## 0.1.0-rc.2
+
+Built on Ghostty 1.4.1-dev (main at f28124c73).
+
+### Fixed
+- **Ctrl+L in bash didn't clear the screen or scrollback, and terminfo-based
+  programs saw an unknown terminal.** rc.1 relied on Fedora's `ncurses-term`
+  for terminfo, but it only provides `ghostty`, not the `xterm-ghostty`
+  that term3 sets as `TERM`. term3 now ships Ghostty's terminfo, which
+  includes `E3` (clear scrollback, used by readline's clear-screen), in a
+  private database at `/usr/share/term3/terminfo`, and points `TERMINFO` at
+  it. ncurses still falls back to the system database for other terminal
+  types, and the private location can't conflict with `ncurses-term` or a
+  Ghostty package.
+- **Bar cursor at the prompt.** Ghostty's shell integration switched the
+  cursor to a bar at the prompt. term3 turns that feature off by default,
+  so the cursor stays a block, like GNOME Terminal
+  (`shell-integration-features = cursor` brings it back).
+- Regression tests: the GUI test runs `tput clear` and `tput E3` inside a
+  term3 tab, the smoke test checks the shipped entry, and the RPM's
+  `%check` verifies it.
+
 ## 0.1.0-rc.1
 
 First release candidate. Built on Ghostty 1.4.1-dev (main at f28124c73).

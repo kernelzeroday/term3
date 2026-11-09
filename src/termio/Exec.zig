@@ -649,12 +649,17 @@ const Subprocess = struct {
             try env.put("TERM", cfg.term);
             try env.put("COLORTERM", "truecolor");
 
-            // Assume that the resources directory is adjacent to the terminfo
-            // database
+            // term3: on Linux the terminfo database is inside the resources
+            // directory (share/term3/terminfo). ncurses searches TERMINFO
+            // first and then the system database, so other terminal types
+            // still resolve. Upstream: adjacent to the resources directory.
             var buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
-            const dir = try std.mem.print(&buf, "{s}/terminfo", .{
-                std.fs.path.dirname(base) orelse unreachable,
-            });
+            const dir = if (comptime builtin.target.os.tag == .linux)
+                try std.mem.print(&buf, "{s}/terminfo", .{base})
+            else
+                try std.mem.print(&buf, "{s}/terminfo", .{
+                    std.fs.path.dirname(base) orelse unreachable,
+                });
             try env.put("TERMINFO", dir);
         } else {
             if (comptime builtin.target.os.tag.isDarwin()) {

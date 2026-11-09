@@ -2958,7 +2958,8 @@ keybind: Keybinds = .{},
 ///
 /// Available features:
 ///
-///   * `cursor` - Set the cursor to a bar at the prompt.
+///   * `cursor` - Set the cursor to a bar at the prompt. term3: off by
+///     default, so the cursor stays a block like GNOME Terminal's.
 ///
 ///   * `sudo` - Set sudo wrapper to preserve terminfo.
 ///
@@ -8977,7 +8978,8 @@ pub const ShellIntegration = enum {
 
 /// Shell integration features
 pub const ShellIntegrationFeatures = packed struct {
-    cursor: bool = true,
+    // term3: GNOME Terminal keeps a block cursor at the prompt.
+    cursor: bool = false,
     sudo: bool = false,
     title: bool = true,
     @"ssh-env": bool = false,
@@ -11553,6 +11555,19 @@ test "term3: property: any u32 sidebar width round-trips" {
         try testing.expect(cfg._diagnostics.empty());
         try testing.expectEqual(w, cfg.@"gtk-sidebar-width");
     }
+}
+
+test "term3: block cursor at the prompt by default, like GNOME Terminal" {
+    const testing = std.testing;
+    var cfg = try Config.default(testing.allocator);
+    defer cfg.deinit();
+    try testing.expectEqual(terminal.CursorStyle.block, cfg.@"cursor-style");
+    try testing.expect(!cfg.@"shell-integration-features".cursor);
+
+    // Still available on request.
+    var it: TestIterator = .{ .data = &.{"--shell-integration-features=cursor"} };
+    try cfg.loadIter(testing.allocator, &it);
+    try testing.expect(cfg.@"shell-integration-features".cursor);
 }
 
 test "term3: system font is the default and config replaces it" {
