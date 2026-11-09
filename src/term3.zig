@@ -12,7 +12,7 @@ const std = @import("std");
 ///
 /// Pre-releases use semver's `-rc.N` form; see term3/RELEASING.md.
 /// `term3/scripts/version.sh` reads this line, so keep it a single literal.
-pub const version = "0.1.0-rc.2";
+pub const version = "0.1.0-rc.3";
 
 /// Which side of the window the tab sidebar is on.
 pub const Side = enum { left, right };

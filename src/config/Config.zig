@@ -607,11 +607,13 @@ theme: ?Theme = null,
 
 /// Background color for the window.
 /// Specified as either hex (`#RRGGBB` or `RRGGBB`) or a named X11 color.
-background: Color = .{ .r = 0x28, .g = 0x2C, .b = 0x34 },
+// term3: GNOME Terminal's "GNOME dark" background.
+background: Color = .{ .r = 0x17, .g = 0x14, .b = 0x21 },
 
 /// Foreground color for the window.
 /// Specified as either hex (`#RRGGBB` or `RRGGBB`) or a named X11 color.
-foreground: Color = .{ .r = 0xFF, .g = 0xFF, .b = 0xFF },
+// term3: GNOME Terminal's "GNOME dark" foreground.
+foreground: Color = .{ .r = 0xD0, .g = 0xCF, .b = 0xCC },
 
 /// Background image for the terminal.
 ///
@@ -6126,8 +6128,30 @@ pub const ColorList = struct {
 pub const Palette = struct {
     const Self = @This();
 
+    // term3: default to GNOME Terminal's "GNOME dark" 16-color ANSI palette.
+    pub const default_term3_palette: terminal.color.Palette = default_term3: {
+        var result = terminal.color.default;
+        result[0] = .{ .r = 0x17, .g = 0x14, .b = 0x21 };
+        result[1] = .{ .r = 0xC0, .g = 0x1C, .b = 0x28 };
+        result[2] = .{ .r = 0x26, .g = 0xA2, .b = 0x69 };
+        result[3] = .{ .r = 0xA2, .g = 0x73, .b = 0x4C };
+        result[4] = .{ .r = 0x12, .g = 0x48, .b = 0x8B };
+        result[5] = .{ .r = 0xA3, .g = 0x47, .b = 0xBA };
+        result[6] = .{ .r = 0x2A, .g = 0xA1, .b = 0xB3 };
+        result[7] = .{ .r = 0xD0, .g = 0xCF, .b = 0xCC };
+        result[8] = .{ .r = 0x5E, .g = 0x5C, .b = 0x64 };
+        result[9] = .{ .r = 0xF6, .g = 0x61, .b = 0x51 };
+        result[10] = .{ .r = 0x33, .g = 0xD1, .b = 0x7A };
+        result[11] = .{ .r = 0xE9, .g = 0xAD, .b = 0x0C };
+        result[12] = .{ .r = 0x2A, .g = 0x7B, .b = 0xDE };
+        result[13] = .{ .r = 0xC0, .g = 0x61, .b = 0xCB };
+        result[14] = .{ .r = 0x33, .g = 0xC7, .b = 0xDE };
+        result[15] = .{ .r = 0xFF, .g = 0xFF, .b = 0xFF };
+        break :default_term3 result;
+    };
+
     /// The actual value that is updated as we parse.
-    value: terminal.color.Palette = terminal.color.default,
+    value: terminal.color.Palette = default_term3_palette,
 
     /// Keep track of which indexes were manually set by the user.
     mask: terminal.color.PaletteMask = .empty,
@@ -6244,7 +6268,7 @@ pub const Palette = struct {
 
         var list: Self = .{};
         try list.formatEntry(formatterpkg.entryFormatter("a", &buf.writer));
-        try std.testing.expectEqualSlices(u8, "a = 0=#1d1f21\n", buf.written()[0..14]);
+        try std.testing.expectEqualSlices(u8, "a = 0=#171421\n", buf.written()[0..14]);
     }
 
     test "parseCLI with whitespace" {
@@ -11611,4 +11635,49 @@ test "term3: system font is the default and config replaces it" {
         try testing.expectEqualStrings("Noto Sans Mono", cfg.@"font-family".list.items[1]);
         try testing.expectEqual(@as(f32, 14), cfg.@"font-size");
     }
+}
+
+test "term3: GNOME dark color scheme by default, like GNOME Terminal" {
+    const testing = std.testing;
+    var cfg = try Config.default(testing.allocator);
+    defer cfg.deinit();
+
+    // Default background and foreground match GNOME Terminal "GNOME dark"
+    try testing.expectEqual(Color{ .r = 0x17, .g = 0x14, .b = 0x21 }, cfg.background);
+    try testing.expectEqual(Color{ .r = 0xD0, .g = 0xCF, .b = 0xCC }, cfg.foreground);
+
+    // Default 16-color ANSI palette matches GNOME Terminal "GNOME dark"
+    const expected_palette = [_]terminal.color.RGB{
+        .{ .r = 0x17, .g = 0x14, .b = 0x21 }, // 0: black
+        .{ .r = 0xC0, .g = 0x1C, .b = 0x28 }, // 1: red
+        .{ .r = 0x26, .g = 0xA2, .b = 0x69 }, // 2: green
+        .{ .r = 0xA2, .g = 0x73, .b = 0x4C }, // 3: yellow
+        .{ .r = 0x12, .g = 0x48, .b = 0x8B }, // 4: blue
+        .{ .r = 0xA3, .g = 0x47, .b = 0xBA }, // 5: magenta
+        .{ .r = 0x2A, .g = 0xA1, .b = 0xB3 }, // 6: cyan
+        .{ .r = 0xD0, .g = 0xCF, .b = 0xCC }, // 7: white
+        .{ .r = 0x5E, .g = 0x5C, .b = 0x64 }, // 8: bright black
+        .{ .r = 0xF6, .g = 0x61, .b = 0x51 }, // 9: bright red
+        .{ .r = 0x33, .g = 0xD1, .b = 0x7A }, // 10: bright green
+        .{ .r = 0xE9, .g = 0xAD, .b = 0x0C }, // 11: bright yellow
+        .{ .r = 0x2A, .g = 0x7B, .b = 0xDE }, // 12: bright blue
+        .{ .r = 0xC0, .g = 0x61, .b = 0xCB }, // 13: bright magenta
+        .{ .r = 0x33, .g = 0xC7, .b = 0xDE }, // 14: bright cyan
+        .{ .r = 0xFF, .g = 0xFF, .b = 0xFF }, // 15: bright white
+    };
+
+    for (expected_palette, 0..) |expected, i| {
+        try testing.expectEqual(expected, cfg.palette.value[i]);
+    }
+
+    // Config overrides work as expected
+    var it: TestIterator = .{ .data = &.{
+        "--background=#000000",
+        "--foreground=#ffffff",
+        "--palette=1=#ff0000",
+    } };
+    try cfg.loadIter(testing.allocator, &it);
+    try testing.expectEqual(Color{ .r = 0x00, .g = 0x00, .b = 0x00 }, cfg.background);
+    try testing.expectEqual(Color{ .r = 0xFF, .g = 0xFF, .b = 0xFF }, cfg.foreground);
+    try testing.expectEqual(terminal.color.RGB{ .r = 0xFF, .g = 0x00, .b = 0x00 }, cfg.palette.value[1]);
 }

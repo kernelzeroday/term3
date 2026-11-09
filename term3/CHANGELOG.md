@@ -3,6 +3,15 @@
 term3 versions follow [semver](https://semver.org); see [RELEASING.md](RELEASING.md).
 Each release notes the Ghostty version it is built on.
 
+## 0.1.0-rc.3
+
+Built on Ghostty 1.4.1-dev (main at f28124c73).
+
+### Added
+- **GNOME dark color scheme and palette by default.** term3 now defaults to
+  GNOME Terminal's standard "GNOME dark" theme: `#171421` background,
+  `#d0cfcc` foreground, and the 16-color ANSI palette from GNOME Terminal.
+
 ## 0.1.0-rc.2
 
 Built on Ghostty 1.4.1-dev (main at f28124c73).
