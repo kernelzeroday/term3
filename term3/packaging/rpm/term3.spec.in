@@ -117,7 +117,10 @@ mv zig-aarch64-linux-%{zig_version} .zig
 %build
 # A fresh, empty cache so only the packages in .zig-deps are used.
 export ZIG_GLOBAL_CACHE_DIR="$PWD/.zig-cache-global"
-.zig/zig build --prefix %{_prefix} %{zig_flags}
+# `zig build` compiles and installs in one step; stage the install here and
+# do the real one in %%install (a fast, fully cached re-run).
+DESTDIR="$PWD/.stage" .zig/zig build --prefix %{_prefix} %{zig_flags}
+rm -rf .stage
 
 %install
 export ZIG_GLOBAL_CACHE_DIR="$PWD/.zig-cache-global"
