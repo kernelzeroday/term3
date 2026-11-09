@@ -1,0 +1,150 @@
+# term3 RPM spec. Generated into term3.spec by term3/scripts/build-rpm.sh,
+# which fills in @VERSION@ (RPM form, e.g. 0.1.0~rc.1), @TARBALL_VERSION@
+# (semver, e.g. 0.1.0-rc.1) and @GHOSTTY_VERSION@.
+#
+# The build is fully offline: Source1 holds every Zig package and Source2/3
+# the pinned Zig compiler (Fedora ships an older Zig than the build needs).
+# See term3/VENDORING.md for what is bundled and why.
+
+%global appid io.github.kernelzeroday.term3
+%global zig_version 0.17.1
+%global tarball_version @TARBALL_VERSION@
+%global ghostty_version @GHOSTTY_VERSION@
+
+# Link Fedora's system libraries instead of the bundled copies where Fedora
+# packages them (`--without system_libs` to build everything bundled).
+%bcond system_libs 1
+
+# Zig produces its own debug info layout; debugsource extraction isn't useful.
+%global debug_package %{nil}
+
+Name:           term3
+Version:        @VERSION@
+Release:        1%{?dist}
+Summary:        GTK terminal with tabs in a sidebar on the left, based on Ghostty
+
+# term3 and Ghostty: MIT. Bundled code and fonts: see term3/VENDORING.md.
+License:        MIT AND Apache-2.0 AND BSD-3-Clause AND OFL-1.1 AND MPL-2.0 AND (FTL OR GPL-2.0-or-later) AND Zlib AND ISC
+URL:            https://github.com/kernelzeroday/term3
+Source0:        term3-%{tarball_version}.tar.gz
+Source1:        term3-%{tarball_version}-zig-deps.tar.gz
+Source2:        https://ziglang.org/download/%{zig_version}/zig-x86_64-linux-%{zig_version}.tar.xz
+Source3:        https://ziglang.org/download/%{zig_version}/zig-aarch64-linux-%{zig_version}.tar.xz
+
+ExclusiveArch:  x86_64 aarch64
+
+BuildRequires:  blueprint-compiler
+BuildRequires:  gettext
+BuildRequires:  pkgconfig(gtk4)
+BuildRequires:  pkgconfig(libadwaita-1)
+BuildRequires:  pkgconfig(x11)
+BuildRequires:  pkgconfig(egl)
+BuildRequires:  pkgconfig(gtk4-layer-shell-0)
+%if %{with system_libs}
+BuildRequires:  pkgconfig(fontconfig)
+BuildRequires:  pkgconfig(freetype2)
+BuildRequires:  pkgconfig(harfbuzz)
+BuildRequires:  pkgconfig(libpng)
+BuildRequires:  pkgconfig(zlib)
+BuildRequires:  pkgconfig(oniguruma)
+BuildRequires:  pkgconfig(libxml-2.0)
+%endif
+
+# Terminfo for TERM=xterm-ghostty, which term3 keeps for compatibility.
+Requires:       ncurses-term
+Requires:       hicolor-icon-theme
+
+# Bundled copies (see term3/VENDORING.md).
+Provides:       bundled(glslang)
+Provides:       bundled(spirv-cross)
+Provides:       bundled(simdutf)
+Provides:       bundled(highway)
+Provides:       bundled(imgui)
+Provides:       bundled(wuffs)
+Provides:       bundled(glad)
+Provides:       bundled(jetbrains-mono-fonts) = 2.304
+Provides:       bundled(nerd-fonts-symbols) = 3.4.0
+%if %{without system_libs}
+Provides:       bundled(fontconfig)
+Provides:       bundled(freetype)
+Provides:       bundled(harfbuzz)
+Provides:       bundled(libpng)
+Provides:       bundled(zlib)
+Provides:       bundled(oniguruma)
+Provides:       bundled(libxml2)
+%endif
+
+%description
+term3 is a terminal emulator whose one opinion is a vertical tab sidebar on
+the left, like iTerm2: tabs have a fixed size, show their working directory,
+can be dragged to reorder, and the sidebar can be resized. Everything else is
+Ghostty (%{ghostty_version}): GPU rendering, fonts, configuration, and shell
+integration. Configuration lives in ~/.config/term3/config.
+
+%prep
+%autosetup -n term3-%{tarball_version}
+mkdir -p .zig-deps
+tar -xzf %{SOURCE1} -C .zig-deps --strip-components=1
+%ifarch x86_64
+tar -xJf %{SOURCE2}
+mv zig-x86_64-linux-%{zig_version} .zig
+%endif
+%ifarch aarch64
+tar -xJf %{SOURCE3}
+mv zig-aarch64-linux-%{zig_version} .zig
+%endif
+
+%global zig_flags \\\
+    --system "$PWD/.zig-deps" \\\
+    -Doptimize=ReleaseFast \\\
+    -Dcpu=baseline \\\
+    -Dpie=true \\\
+    -Dstrip=false \\\
+    -Demit-docs=false \\\
+    -Demit-terminfo=false \\\
+    -Demit-termcap=false \\\
+    -Dversion-string=%{ghostty_version} \\\
+    %{?with_system_libs:-fsys=fontconfig -fsys=freetype -fsys=harfbuzz -fsys=libpng -fsys=zlib -fsys=oniguruma -fsys=libxml2 -fsys=gtk4-layer-shell}
+
+%build
+# A fresh, empty cache so only the packages in .zig-deps are used.
+export ZIG_GLOBAL_CACHE_DIR="$PWD/.zig-cache-global"
+.zig/zig build --prefix %{_prefix} %{zig_flags}
+
+%install
+export ZIG_GLOBAL_CACHE_DIR="$PWD/.zig-cache-global"
+DESTDIR=%{buildroot} .zig/zig build --prefix %{_prefix} %{zig_flags}
+
+# Files keyed to the `ghostty` command name: wrong for `term3` and would
+# conflict with a Ghostty package. term3 versions are on the roadmap.
+rm -rf %{buildroot}%{_datadir}/bash-completion \
+       %{buildroot}%{_datadir}/zsh \
+       %{buildroot}%{_datadir}/fish \
+       %{buildroot}%{_datadir}/bat \
+       %{buildroot}%{_datadir}/vim \
+       %{buildroot}%{_datadir}/nvim \
+       %{buildroot}%{_datadir}/terminfo \
+       %{buildroot}%{_mandir}
+
+%find_lang %{appid}
+
+%check
+desktop-file-validate %{buildroot}%{_datadir}/applications/%{appid}.desktop || :
+%{buildroot}%{_bindir}/term3 +version | grep -q '^term3 %{tarball_version} '
+
+%files -f %{appid}.lang
+%license LICENSE
+%doc README.md TERM3.md term3/SCOPE.md term3/VENDORING.md term3/CHANGELOG.md
+%{_bindir}/term3
+%{_datadir}/term3/
+%{_datadir}/applications/%{appid}.desktop
+%{_datadir}/dbus-1/services/%{appid}.service
+%{_datadir}/icons/hicolor/*/apps/%{appid}.png
+%{_datadir}/kio/servicemenus/%{appid}.desktop
+%{_datadir}/metainfo/%{appid}.metainfo.xml
+%{_datadir}/nautilus-python/extensions/term3.py
+%{_userunitdir}/app-%{appid}.service
+
+%changelog
+* @DATE@ term3 maintainers <noreply@github.com> - @VERSION@-1
+- See term3/CHANGELOG.md

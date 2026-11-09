@@ -9,6 +9,7 @@ const renderer = @import("../renderer.zig");
 const global = @import("../global.zig");
 
 const gtk_version = @import("../apprt/gtk/gtk_version.zig");
+const term3 = @import("../term3.zig");
 const adw_version = @import("../apprt/gtk/adw_version.zig");
 
 pub const Options = struct {};
@@ -32,10 +33,12 @@ pub fn run(alloc: Allocator) !u8 {
             .{commit_hash},
         );
     };
-    try stdout.print("Ghostty {s}\n\n", .{build_config.version_string});
+    // term3: our version first, then the Ghostty version it's built on.
+    try stdout.print("term3 {s} (ghostty {s})\n\n", .{ term3.version, build_config.version_string });
     if (tty) try stdout.print("\x1b]8;;\x1b\\", .{});
 
     try stdout.print("Version\n", .{});
+    try stdout.print("  - term3  : {s}\n", .{term3.version});
     try stdout.print("  - version: {s}\n", .{build_config.version_string});
     try stdout.print("  - channel: {t}\n", .{build_config.release_channel});
 

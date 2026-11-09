@@ -268,6 +268,11 @@ language: ?[:0]const u8 = null,
 /// On Linux with GTK, font size is scaled according to both display-wide and
 /// text-specific scaling factors, which are often managed by your desktop
 /// environment (e.g. the GNOME display scale and large text settings).
+///
+/// term3: on GNOME, the default font family and size are the desktop's
+/// monospace font (`org.gnome.desktop.interface monospace-font-name`), as
+/// in GNOME Terminal's default profile. Setting `font-family` or
+/// `font-size` in your config overrides them.
 @"font-size": f32 = switch (builtin.target.os.tag) {
     // On macOS we default a little bigger since this tends to look better. This
     // is purely subjective but this is easy to modify.
@@ -567,7 +572,7 @@ language: ?[:0]const u8 = null,
 /// directory. Ghostty ships with a multitude of themes that will be installed
 /// into this directory. On macOS, this list is in the
 /// `Ghostty.app/Contents/Resources/ghostty/themes` directory. On Linux, this
-/// list is in the `share/ghostty/themes` directory (wherever you installed the
+/// list is in the `share/term3/themes` directory (wherever you installed the
 /// Ghostty "share" directory.
 ///
 /// To see a list of available themes, run `ghostty +list-themes`.
@@ -3886,6 +3891,18 @@ else
 ///    lines so tabs keep a uniform size.
 @"gtk-sidebar-title-overflow": GtkSidebarTitleOverflow = .ellipsize,
 
+/// A second, dimmed line under each tab's title in the vertical tab
+/// sidebar. GTK only (term3).
+///
+/// Valid values are:
+///
+///  * `working-directory` - The current working directory of the tab's
+///    focused terminal, with your home directory shown as `~`. It follows
+///    `cd` when the shell reports its directory (Ghostty's shell
+///    integration does this automatically).
+///  * `none` - Titles only.
+@"gtk-sidebar-subtitle": GtkSidebarSubtitle = .@"working-directory",
+
 /// The number of lines each tab reserves for its title when
 /// `gtk-sidebar-title-overflow` is `wrap`. Clamped to 1 through 8.
 /// GTK only (term3).
@@ -4126,8 +4143,25 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
         .highlight = .{ .hover_mods = inputpkg.ctrlOrSuper(.{}) },
     });
 
+    // term3: default to the desktop's monospace font, like GNOME
+    // Terminal. A `font-family` from config replaces it (overwrite_next)
+    // rather than being added as a fallback after it.
+    if (term3_system_font) |sf| {
+        try result.@"font-family".list.append(
+            alloc,
+            try alloc.dupeSentinel(u8, sf.family, 0),
+        );
+        result.@"font-family".overwrite_next = true;
+        result.@"font-size" = sf.size;
+    }
+
     return result;
 }
+
+/// term3: the desktop's monospace font, set by the app runtime before any
+/// config is created (see src/apprt/gtk/term3_system_font.zig). When set,
+/// it is the default `font-family` and `font-size`.
+pub var term3_system_font: ?@import("../term3.zig").SystemFont = null;
 
 /// Load configuration from an iterator that yields values that look like
 /// command-line arguments, i.e. `--key=value`.
@@ -9393,6 +9427,12 @@ pub const GtkTabsLocation = enum {
     }
 };
 
+/// See gtk-sidebar-subtitle
+pub const GtkSidebarSubtitle = enum {
+    none,
+    @"working-directory",
+};
+
 /// See gtk-sidebar-title-overflow
 pub const GtkSidebarTitleOverflow = enum {
     ellipsize,
@@ -11440,5 +11480,120 @@ test "compatibility: window new-window" {
             MacOSDockDropBehavior.@"new-window",
             cfg.@"macos-dock-drop-behavior",
         );
+    }
+}
+
+//---------------------------------------------------------------------
+// term3 config tests. Run: zig build test -Dtest-filter=term3
+
+test "term3: sidebar option defaults" {
+    const testing = std.testing;
+    var cfg = try Config.default(testing.allocator);
+    defer cfg.deinit();
+    try testing.expectEqual(GtkTabsLocation.left, cfg.@"gtk-tabs-location");
+    try testing.expectEqual(@as(u32, 220), cfg.@"gtk-sidebar-width");
+    try testing.expectEqual(GtkSidebarTitleOverflow.ellipsize, cfg.@"gtk-sidebar-title-overflow");
+    try testing.expectEqual(@as(u8, 2), cfg.@"gtk-sidebar-title-lines");
+    try testing.expectEqual(GtkSidebarSubtitle.@"working-directory", cfg.@"gtk-sidebar-subtitle");
+}
+
+test "term3: sidebar options parse" {
+    const testing = std.testing;
+    var cfg = try Config.default(testing.allocator);
+    defer cfg.deinit();
+    var it: TestIterator = .{ .data = &.{
+        "--gtk-tabs-location=right",
+        "--gtk-sidebar-width=300",
+        "--gtk-sidebar-title-overflow=wrap",
+        "--gtk-sidebar-title-lines=3",
+        "--gtk-sidebar-subtitle=none",
+    } };
+    try cfg.loadIter(testing.allocator, &it);
+    try cfg.finalize();
+    try testing.expect(cfg._diagnostics.empty());
+    try testing.expectEqual(GtkTabsLocation.right, cfg.@"gtk-tabs-location");
+    try testing.expect(cfg.@"gtk-tabs-location".isSidebar());
+    try testing.expectEqual(@as(u32, 300), cfg.@"gtk-sidebar-width");
+    try testing.expectEqual(GtkSidebarTitleOverflow.wrap, cfg.@"gtk-sidebar-title-overflow");
+    try testing.expectEqual(@as(u8, 3), cfg.@"gtk-sidebar-title-lines");
+    try testing.expectEqual(GtkSidebarSubtitle.none, cfg.@"gtk-sidebar-subtitle");
+}
+
+test "term3: invalid sidebar options are diagnosed, not fatal" {
+    const testing = std.testing;
+    inline for (.{
+        "--gtk-tabs-location=middle",
+        "--gtk-sidebar-width=wide",
+        "--gtk-sidebar-width=-5",
+        "--gtk-sidebar-title-overflow=marquee",
+        "--gtk-sidebar-title-lines=300",
+        "--gtk-sidebar-subtitle=cwd",
+    }) |arg| {
+        var cfg = try Config.default(testing.allocator);
+        defer cfg.deinit();
+        var it: TestIterator = .{ .data = &.{arg} };
+        try cfg.loadIter(testing.allocator, &it);
+        try cfg.finalize();
+        try testing.expect(!cfg._diagnostics.empty());
+    }
+}
+
+test "term3: property: any u32 sidebar width round-trips" {
+    const testing = std.testing;
+    var prng = std.Random.DefaultPrng.init(0x7e3a_0101);
+    const r = prng.random();
+    for (0..500) |_| {
+        const w = r.int(u32);
+        var buf: [64]u8 = undefined;
+        const arg = try std.fmt.bufPrint(&buf, "--gtk-sidebar-width={d}", .{w});
+        var cfg = try Config.default(testing.allocator);
+        defer cfg.deinit();
+        var it: TestIterator = .{ .data = &.{arg} };
+        try cfg.loadIter(testing.allocator, &it);
+        try testing.expect(cfg._diagnostics.empty());
+        try testing.expectEqual(w, cfg.@"gtk-sidebar-width");
+    }
+}
+
+test "term3: system font is the default and config replaces it" {
+    const testing = std.testing;
+    const saved = term3_system_font;
+    defer term3_system_font = saved;
+
+    // No desktop font: Ghostty's defaults.
+    term3_system_font = null;
+    {
+        var cfg = try Config.default(testing.allocator);
+        defer cfg.deinit();
+        try cfg.finalize();
+        try testing.expectEqual(@as(usize, 0), cfg.@"font-family".count());
+        try testing.expect(cfg.@"font-size" > 0);
+    }
+
+    term3_system_font = .{ .family = "Adwaita Mono", .size = 11 };
+
+    // Desktop font becomes the default family (and styles) and size.
+    {
+        var cfg = try Config.default(testing.allocator);
+        defer cfg.deinit();
+        try cfg.finalize();
+        try testing.expectEqual(@as(usize, 1), cfg.@"font-family".count());
+        try testing.expectEqualStrings("Adwaita Mono", cfg.@"font-family".list.items[0]);
+        try testing.expectEqualStrings("Adwaita Mono", cfg.@"font-family-bold".list.items[0]);
+        try testing.expectEqual(@as(f32, 11), cfg.@"font-size");
+    }
+
+    // A configured family replaces the desktop font instead of being
+    // appended as a fallback after it; a configured size wins too.
+    {
+        var cfg = try Config.default(testing.allocator);
+        defer cfg.deinit();
+        var it: TestIterator = .{ .data = &.{ "--font-family=Iosevka", "--font-family=Noto Sans Mono", "--font-size=14" } };
+        try cfg.loadIter(testing.allocator, &it);
+        try cfg.finalize();
+        try testing.expectEqual(@as(usize, 2), cfg.@"font-family".count());
+        try testing.expectEqualStrings("Iosevka", cfg.@"font-family".list.items[0]);
+        try testing.expectEqualStrings("Noto Sans Mono", cfg.@"font-family".list.items[1]);
+        try testing.expectEqual(@as(f32, 14), cfg.@"font-size");
     }
 }

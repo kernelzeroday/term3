@@ -3,7 +3,7 @@
 A Linux terminal with one opinion: **tabs live in a vertical sidebar on the
 left**, like iTerm2. Everything else is upstream Ghostty.
 
-term3 is a small, rebase-friendly fork of [Ghostty](https://github.com/ghostty-org/ghostty)'s
+term3 is a small, easy-to-merge fork of [Ghostty](https://github.com/ghostty-org/ghostty)'s
 GTK4/libadwaita app. The patch touches the tab UI only; terminal emulation,
 rendering, fonts, config, shell integration, splits, etc. are Ghostty's.
 
@@ -28,6 +28,7 @@ rendering, fonts, config, shell integration, splits, etc. are Ghostty's.
 | `gtk-sidebar-width` | pixels (80–800) | `220` |
 | `gtk-sidebar-title-overflow` | `ellipsize`, `scroll`, `wrap` | `ellipsize` |
 | `gtk-sidebar-title-lines` | lines for `wrap` (1–8) | `2` |
+| `gtk-sidebar-subtitle` | `working-directory`, `none` | `working-directory` |
 
 - `ellipsize`: one line, cut off with "…"; full title in the tooltip.
 - `scroll`: one line; a long title scrolls horizontally while hovered.
@@ -36,6 +37,16 @@ rendering, fonts, config, shell integration, splits, etc. are Ghostty's.
 `top`/`bottom` give stock Ghostty behaviour. With the sidebar,
 `gtk-titlebar-style = tabs` acts like `native` (there's no tab bar to merge
 into the titlebar).
+
+## Project docs
+
+| Doc | What |
+| --- | --- |
+| [term3/SCOPE.md](term3/SCOPE.md) | What term3 is and isn't, the test for new features, and the roadmap |
+| [term3/RELEASING.md](term3/RELEASING.md) | Versioning, tags (`term3-vX.Y.Z`), the release checklist, upstream merges |
+| [term3/VENDORING.md](term3/VENDORING.md) | Every bundled dependency, what's system vs bundled, and the unvendoring plan |
+| [term3/TESTING.md](term3/TESTING.md) | Test tiers: unit, property, smoke, headless GUI, valgrind |
+| [term3/CHANGELOG.md](term3/CHANGELOG.md) | Release notes |
 
 ## Where the code is
 
@@ -46,7 +57,10 @@ into the titlebar).
 | `src/apprt/gtk/class/window.zig` | Wiring: `sidebar-visible`, placement, options |
 | `src/apprt/gtk/ui/1.4/window.blp` | Sidebar placed beside the terminal area |
 | `src/apprt/gtk/css/style.css` | `term3` section at the end |
-| `src/config/Config.zig` | The options above |
+| `src/config/Config.zig` | The options above, system-font default, term3 config tests |
+| `src/term3.zig` | term3 version and pure sidebar logic, with unit and property tests |
+| `src/apprt/gtk/term3_system_font.zig` | Reads GNOME's monospace font |
+| `term3/` | Docs, icon source, packaging, scripts, tests |
 
 The sidebar holds no tab state of its own. It renders `AdwTabView`'s page
 model (`adw_tab_view_get_pages`) and sends every action (select, close,
@@ -90,11 +104,11 @@ internal names in the source.
 
 ```sh
 git fetch upstream
-git rebase upstream/main
+git merge upstream/main
 ```
 
-The patch is additive and confined to the files above, so conflicts should
-be rare and small (most likely in `window.blp` / `window.zig`).
+Merge, don't rebase: release tags stay valid and `main` never needs a
+force-push. See [term3/RELEASING.md](term3/RELEASING.md).
 
 ## Research notes (2026-11-09)
 
@@ -122,7 +136,7 @@ Why this shape, and not the alternatives:
 - **Language.** The GTK app is Zig, so the patch is Zig. Writing the widget in
   Rust (gtk4-rs, linked as a static lib) is possible but would add a second
   toolchain and a cross-language GObject boundary for a few hundred lines,
-  and make rebases harder. Standalone tooling around term3 can be Rust.
+  and make upstream merges harder. Standalone tooling around term3 can be Rust.
 - **Platform.** Fedora Asahi (aarch64, 16k pages) is supported by Zig 0.17
   and libghostty-vt's tier-1 Linux aarch64 target.
 

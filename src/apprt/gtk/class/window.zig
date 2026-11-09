@@ -27,6 +27,7 @@ const Surface = @import("surface.zig").Surface;
 const Tab = @import("tab.zig").Tab;
 const TabSidebar = @import("tab_sidebar.zig").TabSidebar;
 const TabSidebarSide = @import("tab_sidebar.zig").Side;
+const term3 = @import("../../../term3.zig");
 const DebugWarning = @import("debug_warning.zig").DebugWarning;
 const CommandPalette = @import("command_palette.zig").CommandPalette;
 const WeakRef = @import("../weak_ref.zig").WeakRef;
@@ -766,6 +767,7 @@ pub const Window = extern struct {
                 .width = config.@"gtk-sidebar-width",
                 .overflow = config.@"gtk-sidebar-title-overflow",
                 .title_lines = config.@"gtk-sidebar-title-lines",
+                .subtitle = config.@"gtk-sidebar-subtitle",
             });
         }
 
@@ -2084,6 +2086,11 @@ pub const Window = extern struct {
     ) callconv(.c) void {
         const name = "term3";
         const icon = build_config.bundle_id;
+        // term3's version, plus the Ghostty version it is built on.
+        const about_version = std.fmt.comptimePrint(
+            "{s} (ghostty {s})",
+            .{ term3.version, build_config.version_string },
+        );
         const website = "https://github.com/kernelzeroday/term3";
 
         adw.showAboutDialog(
@@ -2097,7 +2104,7 @@ pub const Window = extern struct {
             "application-icon",
             icon,
             "version",
-            build_config.version_string.ptr,
+            about_version.ptr,
             "issue-url",
             "https://github.com/kernelzeroday/term3/issues",
             "website",

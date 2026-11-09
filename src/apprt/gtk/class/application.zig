@@ -26,6 +26,7 @@ const terminal = @import("../../../terminal/main.zig");
 const xev = global.xev;
 const Binding = @import("../../../input.zig").Binding;
 const CoreConfig = configpkg.Config;
+const term3_system_font = @import("../term3_system_font.zig");
 const CoreSurface = @import("../../../Surface.zig");
 
 const ext = @import("../ext.zig");
@@ -274,6 +275,10 @@ pub const Application = extern struct {
         // Log our GTK versions
         try gtk_version.logVersion();
         try adw_version.logVersion();
+
+        // term3: default to the desktop's monospace font (see
+        // term3_system_font.zig); must happen before config is created.
+        term3_system_font.refresh();
 
         // Load our configuration.
         var config = CoreConfig.load(alloc) catch |err| err: {
@@ -2854,8 +2859,10 @@ const Action = struct {
                 break :config self.private().config.ref();
             }
 
-            // Hard reload, load a new config completely.
+            // Hard reload, load a new config completely. term3: re-read the
+            // desktop font so a changed system font applies on reload.
             const alloc = self.allocator();
+            term3_system_font.refresh();
             var config = try CoreConfig.load(alloc);
             defer config.deinit();
             break :config try .new(alloc, &config);

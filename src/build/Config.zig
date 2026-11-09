@@ -347,6 +347,10 @@ pub fn init(b: *std.Build, versions: Versions) !Config {
             // Tip releases behave just like any other pre-release so we skip.
             if (std.mem.eql(u8, tag, "tip")) continue;
 
+            // term3 release tags (term3-vX.Y.Z) version term3, not Ghostty;
+            // see term3/RELEASING.md and src/term3.zig.
+            if (std.mem.startsWith(u8, tag, "term3-")) continue;
+
             const expected = b.fmt("v{d}.{d}.{d}", .{
                 app_version.major,
                 app_version.minor,

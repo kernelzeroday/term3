@@ -21,27 +21,25 @@ const gobject = @import("gobject");
 const gtk = @import("gtk");
 
 const configpkg = @import("../../../config.zig");
+const term3 = @import("../../../term3.zig");
 const i18n = @import("../../../os/main.zig").i18n;
 const ext = @import("../ext.zig");
 const gresource = @import("../build/gresource.zig");
 const Common = @import("../class.zig").Common;
+const Surface = @import("surface.zig").Surface;
+const Tab = @import("tab.zig").Tab;
 
 const log = std.log.scoped(.gtk_ghostty_tab_sidebar);
 
 pub const TitleOverflow = configpkg.Config.GtkSidebarTitleOverflow;
+pub const Subtitle = configpkg.Config.GtkSidebarSubtitle;
 
 /// Which side of the window the sidebar is on. This determines which edge
 /// the resize handle is on and which way dragging it grows the sidebar.
-pub const Side = enum { left, right };
-
-/// Smallest and largest width the sidebar can be dragged to.
-const min_width = 80;
-const max_width = 800;
+pub const Side = term3.Side;
 
 /// Marquee timing for the `scroll` title overflow mode.
-const marquee_pause_start_s = 0.8;
-const marquee_pause_end_s = 1.2;
-const marquee_speed_px_per_s = 50.0;
+const marquee: term3.Marquee = .{};
 
 /// Object data keys used to stash marquee state on a row's scrolled window.
 const marquee_tick_key = "term3-marquee-tick";
@@ -92,6 +90,7 @@ pub const TabSidebar = extern struct {
         /// Presentation options, set by the window from the config.
         overflow: TitleOverflow = .ellipsize,
         title_lines: u8 = 2,
+        subtitle: Subtitle = .@"working-directory",
         side: Side = .left,
         width: c_int = 220,
 
@@ -213,14 +212,17 @@ pub const TabSidebar = extern struct {
         width: u32,
         overflow: TitleOverflow,
         title_lines: u8,
+        subtitle: Subtitle,
     }) void {
         const priv = self.private();
 
-        const lines = std.math.clamp(opts.title_lines, 1, 8);
+        const lines = term3.clampTitleLines(opts.title_lines);
         const rows_changed = opts.overflow != priv.overflow or
-            lines != priv.title_lines;
+            lines != priv.title_lines or
+            opts.subtitle != priv.subtitle;
         priv.overflow = opts.overflow;
         priv.title_lines = lines;
+        priv.subtitle = opts.subtitle;
 
         if (opts.side != priv.side) {
             priv.side = opts.side;
@@ -233,7 +235,7 @@ pub const TabSidebar = extern struct {
             }
         }
 
-        const width: c_int = @intCast(std.math.clamp(opts.width, min_width, max_width));
+        const width: c_int = term3.clampWidth(opts.width);
         if (width != priv.width) {
             priv.width = width;
             self.applyWidth();
@@ -380,7 +382,13 @@ pub const TabSidebar = extern struct {
         );
         box.append(attention.as(gtk.Widget));
 
-        // Title.
+        // Title, and optionally a subtitle beneath it.
+        const text_box = gtk.Box.new(.vertical, 0);
+        const text_widget = text_box.as(gtk.Widget);
+        text_widget.setHexpand(1);
+        text_widget.setValign(.center);
+        box.append(text_widget);
+
         const label = gtk.Label.new(null);
         const label_widget = label.as(gtk.Widget);
         label_widget.addCssClass("tab-sidebar-title");
@@ -400,7 +408,7 @@ pub const TabSidebar = extern struct {
                 label.setEllipsize(.end);
                 label.setSingleLineMode(1);
                 label_widget.setHexpand(1);
-                box.append(label_widget);
+                text_box.append(label_widget);
             },
 
             .wrap => {
@@ -419,7 +427,7 @@ pub const TabSidebar = extern struct {
                 var line_height: c_int = 0;
                 layout.getPixelSize(null, &line_height);
                 label_widget.setSizeRequest(-1, line_height * lines);
-                box.append(label_widget);
+                text_box.append(label_widget);
             },
 
             .scroll => {
@@ -432,7 +440,7 @@ pub const TabSidebar = extern struct {
                 scroller_widget.setHexpand(1);
                 scroller_widget.setCanTarget(0);
                 scroller.setChild(label_widget);
-                box.append(scroller_widget);
+                text_box.append(scroller_widget);
 
                 const motion = gtk.EventControllerMotion.new();
                 _ = gtk.EventControllerMotion.signals.enter.connect(
@@ -451,6 +459,11 @@ pub const TabSidebar = extern struct {
                 );
                 row_widget.addController(motion.as(gtk.EventController));
             },
+        }
+
+        switch (priv.subtitle) {
+            .none => {},
+            .@"working-directory" => text_box.append(createPwdLabel(page)),
         }
 
         // Close button, shown on hover and on the selected row via CSS.
@@ -512,6 +525,82 @@ pub const TabSidebar = extern struct {
         row_widget.addController(drag.as(gtk.EventController));
 
         return row_widget;
+    }
+
+    /// A label showing the working directory of the page's focused
+    /// terminal. It is bound with a GtkExpression on the tab's title and
+    /// the property chain tab -> active-surface -> pwd, which GTK keeps up
+    /// to date as the title changes, the focused split changes, or the
+    /// shell reports a new directory. It is left blank when the title
+    /// already shows the directory. The label always occupies one line,
+    /// even when empty, so every row has the same height.
+    fn createPwdLabel(page: *adw.TabPage) *gtk.Widget {
+        const label = gtk.Label.new("");
+        const widget = label.as(gtk.Widget);
+        widget.addCssClass("tab-sidebar-subtitle");
+        widget.addCssClass("dim-label");
+        label.setXalign(0);
+        label.setSingleLineMode(1);
+        label.setMaxWidthChars(1);
+        // Keep the end of a long path, which is the part that tells
+        // directories apart.
+        label.setEllipsize(.start);
+
+        const surface_expr = gtk.PropertyExpression.new(
+            Tab.getGObjectType(),
+            null,
+            "active-surface",
+        );
+        const pwd_expr = gtk.PropertyExpression.new(
+            Surface.getGObjectType(),
+            surface_expr.as(gtk.Expression),
+            "pwd",
+        );
+        const title_expr = gtk.PropertyExpression.new(
+            Tab.getGObjectType(),
+            null,
+            "title",
+        );
+        var params = [_]*gtk.Expression{
+            title_expr.as(gtk.Expression),
+            pwd_expr.as(gtk.Expression),
+        };
+        const display_expr = gtk.CClosureExpression.new(
+            gobject.ext.types.string,
+            null,
+            params.len,
+            &params,
+            @ptrCast(&formatPwd),
+            null,
+            null,
+        );
+        // Takes ownership of the expression; the watch ends when the
+        // label or the tab is finalized.
+        _ = display_expr.as(gtk.Expression).bind(
+            label.as(gobject.Object),
+            "label",
+            page.getChild().as(gobject.Object),
+        );
+        return widget;
+    }
+
+    /// Closure for createPwdLabel: the display form of a working directory.
+    /// Returns a newly allocated string, which GTK takes ownership of.
+    fn formatPwd(
+        _: ?*gobject.Object,
+        title_: ?[*:0]const u8,
+        pwd_: ?[*:0]const u8,
+        _: ?*anyopaque,
+    ) callconv(.c) ?[*:0]const u8 {
+        const pwd = std.mem.span(pwd_ orelse return glib.ext.dupeZ(u8, ""));
+        var buf: [4096]u8 = undefined;
+        const home = std.mem.span(glib.getHomeDir());
+        const display = term3.abbreviateHome(&buf, pwd, home);
+        const title = if (title_) |t| std.mem.span(t) else "";
+        if (term3.subtitleRepeatsTitle(title, display, pwd)) {
+            return glib.ext.dupeZ(u8, "");
+        }
+        return glib.ext.dupeZ(u8, display);
     }
 
     /// Find the sidebar that contains `widget`.
@@ -670,15 +759,7 @@ pub const TabSidebar = extern struct {
         self: *Self,
     ) callconv(.c) void {
         const priv = self.private();
-        const delta: c_int = @intFromFloat(switch (priv.side) {
-            .left => offset_x,
-            .right => -offset_x,
-        });
-        priv.width = std.math.clamp(
-            priv.drag_start_width + delta,
-            min_width,
-            max_width,
-        );
+        priv.width = term3.dragWidth(priv.drag_start_width, offset_x, priv.side);
         self.applyWidth();
     }
 
@@ -730,21 +811,8 @@ pub const TabSidebar = extern struct {
 
         const adj = scroller.getHadjustment();
         const overflow = adj.getUpper() - adj.getPageSize();
-        if (overflow <= 0) {
-            adj.setValue(0);
-            return 1;
-        }
-
-        const scroll_s = overflow / marquee_speed_px_per_s;
-        const cycle_s = marquee_pause_start_s + scroll_s + marquee_pause_end_s;
         const elapsed_s = @as(f64, @floatFromInt(now - start)) / std.time.us_per_s;
-        const t = @mod(elapsed_s, cycle_s);
-        const x = std.math.clamp(
-            (t - marquee_pause_start_s) * marquee_speed_px_per_s,
-            0,
-            overflow,
-        );
-        adj.setValue(x);
+        adj.setValue(marquee.offset(elapsed_s, overflow));
         return 1;
     }
 

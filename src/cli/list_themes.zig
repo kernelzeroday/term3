@@ -88,9 +88,9 @@ const ThemeListElement = struct {
 /// directory. Ghostty ships with a multitude of themes that will be installed
 /// into this directory. On macOS, this directory is the
 /// `Ghostty.app/Contents/Resources/ghostty/themes`. On Linux, this directory
-/// is the `share/ghostty/themes` (wherever you installed the Ghostty "share"
+/// is the `share/term3/themes` (wherever you installed the Ghostty "share"
 /// directory). If you're running Ghostty from the source, this is the
-/// `zig-out/share/ghostty/themes` directory.
+/// `zig-out/share/term3/themes` directory.
 ///
 /// You can also set the `GHOSTTY_RESOURCES_DIR` environment variable to point
 /// to the resources directory.

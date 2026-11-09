@@ -1,0 +1,24 @@
+# term3 valgrind suppressions, on top of upstream's valgrind.supp.
+# Only add entries for noise that is demonstrably not ours (GPU drivers,
+# fontconfig caches, one-time GTK/GLib type registration), each with a
+# comment saying why.
+
+{
+   mesa_llvmpipe_jit
+   Memcheck:Cond
+   ...
+   obj:*/libgallium*.so*
+}
+{
+   mesa_llvmpipe_jit_value
+   Memcheck:Value8
+   ...
+   obj:*/libgallium*.so*
+}
+{
+   fontconfig_cache_uninitialised_write
+   Memcheck:Param
+   write(buf)
+   ...
+   fun:FcDirCacheWrite
+}

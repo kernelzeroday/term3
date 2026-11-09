@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- term3 app icon: a terminal window whose tabs sit in a sidebar on the
+     left. Source of truth for all PNG sizes; regenerate with
+     term3/scripts/render-icons.sh. License: MIT, same as term3. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2b3040"/>
+      <stop offset="1" stop-color="#151821"/>
+    </linearGradient>
+    <linearGradient id="screen" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d1017"/>
+      <stop offset="1" stop-color="#121621"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#7aa2ff"/>
+      <stop offset="1" stop-color="#9b7bff"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#000" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+
+  <!-- Tile -->
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="url(#tile)" filter="url(#shadow)"/>
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="6"/>
+
+  <!-- Window -->
+  <rect x="164" y="214" width="696" height="596" rx="56" fill="url(#screen)" stroke="#3a4152" stroke-width="8"/>
+
+  <!-- Sidebar -->
+  <path d="M220 214 H372 V810 H220 A56 56 0 0 1 164 754 V270 A56 56 0 0 1 220 214 Z" fill="#1b2030"/>
+  <line x1="372" y1="222" x2="372" y2="802" stroke="#3a4152" stroke-width="6"/>
+
+  <!-- Tabs: the selected one highlighted -->
+  <rect x="196" y="262" width="148" height="62" rx="18" fill="url(#accent)"/>
+  <rect x="196" y="350" width="148" height="62" rx="18" fill="#2c3346"/>
+  <rect x="196" y="438" width="148" height="62" rx="18" fill="#2c3346"/>
+
+  <!-- Prompt -->
+  <path d="M440 330 L520 384 L440 438" fill="none" stroke="url(#accent)" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="548" y="410" width="120" height="30" rx="15" fill="#c9d1e6"/>
+
+  <!-- Faint output lines -->
+  <rect x="440" y="510" width="300" height="22" rx="11" fill="#c9d1e6" fill-opacity="0.18"/>
+  <rect x="440" y="560" width="220" height="22" rx="11" fill="#c9d1e6" fill-opacity="0.18"/>
+  <rect x="440" y="610" width="260" height="22" rx="11" fill="#c9d1e6" fill-opacity="0.18"/>
+</svg>
