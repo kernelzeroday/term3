@@ -16,11 +16,14 @@ Built on Ghostty 1.4.1-dev (main at f28124c73).
   manual text editing.
 
 ### Fixed
-- **Unmaximizing window placing it off-screen (BUG-001).** When launching
-  maximized on startup, maximization is now scheduled on an idle tick after
-  window presentation. This ensures Mutter on Wayland maps and centers the
-  large floating geometry first, so unmaximizing via header bar double-click
-  or the restore button cleanly restores the centered window on screen.
+- **Unmaximizing window placing it off-screen (BUG-001).** Defaulting
+  `maximize = false` while maintaining large browser-proportioned dimensions
+  (80% screen width & height / 1280×800 fallback) allows Mutter on Wayland
+  to map and center the window cleanly on startup. Mutter caches these valid
+  coordinates in `saved_rect`, ensuring any subsequent maximize/unmaximize
+  cycles restore cleanly to the screen center without off-screen displacement.
+  Users who prefer launching maximized can enable the stateful 'Start Maximized'
+  checkbox in the new Settings menu.
 
 ## 0.1.0-rc.5
 

@@ -492,4 +492,3 @@ test "term3: setConfigMaximize append if missing" {
     defer alloc.free(res);
     try testing.expectEqualStrings("# Term3 config\nfont-size = 14\nmaximize = true\n", res);
 }
-

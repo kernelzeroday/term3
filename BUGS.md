@@ -10,7 +10,7 @@ and status of bugs identified in term3 releases and release candidates.
 - **Discovered:** 2026-11-10 (during 0.1.0-rc.5 soak testing)
 - **Environment:** Debian 13 (Trixie), GNOME Shell 48.x (Mutter), Wayland session
 - **Severity:** Low / Annoyance (recoverable via `<Super>+Up` or dragging titlebar)
-- **Status:** Fixed in 0.1.0-rc.6 via deferred idle maximization (`glib.idleAddOnce`)
+- **Status:** Resolved in 0.1.0-rc.6 via Option 1 (default `maximize = false` with 80% screen restore geometry and Settings UI toggle)
 
 ### Description
 When launching term3 with default settings (where `maximize = true` starts the
@@ -48,16 +48,35 @@ off-screen and only the upper-left quadrant remaining visible.
    click position or unconstrained cascade offset), resulting in the window being placed
    far down and to the right.
 
-### Potential Solutions
-1. **Deferred Maximization (Idle tick after map):**
-   Allow the window to be presented (`gtk_window_present()`) so Mutter executes normal
-   centered floating placement and records valid `saved_rect` coordinates, and then
-   invoke `gtk_window_maximize()` via `g_idle_add` on the next main loop iteration.
-2. **Default `maximize = false` with Large Initial Geometry:**
-   Keep the default window size set to 80% screen / `1280×800` (browser proportions),
-   but default `maximize = false`. This guarantees GNOME/Mutter centers the window
-   cleanly on startup, and any subsequent manual maximize/unmaximize cycles retain the
-   proper centered restore coordinates.
-3. **Mutter / Desktop State Restoration:**
-   Rely on GSettings session state or save/restore geometry across restarts rather
-   than hardcoding `maximize` in the C/Zig initialization path.
+### Why 0.1.0-rc.6 Fix (`glib.idleAddOnce`) Failed
+In `0.1.0-rc.6`, initialization was changed to defer `maximize()` using `glib.idleAddOnce(idleMaximize, ...)`. Testing in 0.1.0-rc.6 confirmed that the bug still reproduced identically:
+1. **GLib Idle Priority vs. Wayland IPC Handshake:**
+   In GTK4 under Wayland, `gtk_window_present()` generates the initial Wayland requests
+   (`wl_surface`, `xdg_surface`, `xdg_toplevel`) and flushes them to the Wayland socket.
+   The compositor (Mutter in `gnome-shell`) runs in a separate process and responds asynchronously
+   with `xdg_surface.configure`.
+2. **Immediate Execution on First Main Context Iteration:**
+   `glib.idleAddOnce` registers an idle source with `G_PRIORITY_DEFAULT_IDLE` (200).
+   On the very first iteration of the GLib main loop (in `g_application_run`), idle sources
+   run before the Wayland socket poll and event dispatch from Mutter complete.
+3. **Mutter Receives Set-Maximized in the Initial Batch:**
+   When `idleMaximize` calls `gtk_window_maximize()`, GTK emits `xdg_toplevel.set_maximized`.
+   From Mutter's perspective, this request is received alongside the initial window creation
+   batch *before* the window has ever mapped or drawn its initial frame. Mutter treats the
+   window as initially maximized from frame 1, entirely bypassing `meta_window_place()`.
+4. **The Flawed Alternative of Timed Delays:**
+   Delaying maximization until after the window is actively rendered (e.g. via `g_timeout_add`
+   after 300–500ms) would populate `saved_rect`, but causes an unacceptable visual glitch:
+   every time term3 starts, the window would flash/pop up floating in the screen center and
+   then abruptly jump to maximized a moment later.
+
+### Evaluated Solutions & Recommended Path
+1. **Option 1: Default `maximize = false` with 80% screen size (Recommended):**
+   - Retain the browser-proportioned 80% screen width & height (`1280×800` fallback) default window geometry.
+   - Set `maximize: bool = false` as default in `src/config/Config.zig`.
+   - **Result:** Mutter maps the window floating, centers it cleanly on startup (honoring `org.gnome.mutter center-new-windows`), and populates `saved_rect` with valid centered coordinates. If the user later maximizes (via titlebar double-click, window controls, or `<Super>+Up`) and then unmaximizes, it returns perfectly to the center of the display with zero offset.
+   - Conforms strictly to GNOME Human Interface Guidelines (HIG) and GNOME Terminal conventions (where no standard desktop terminal defaults to start maximized).
+   - Preserves user choice: users who explicitly want new windows to open maximized can enable the stateful "Start Maximized" toggle in the hamburger "Settings" menu added in 0.1.0-rc.6.
+
+2. **Option 2: Wayland / Mutter Session Geometry State Restoration:**
+   - Rather than hardcoding window states in client initialization paths, rely on desktop session state or GSettings window state persistence.

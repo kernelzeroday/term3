@@ -1503,8 +1503,9 @@ link: RepeatableLink = .{},
 /// will apply to all new windows, not just the first one.
 ///
 /// Available since: 1.1.0
-// term3: start maximized by default.
-maximize: bool = true,
+// term3: start unmaximized by default with large 80% screen geometry,
+// avoiding Wayland/Mutter BUG-001 unmaximize displacement.
+maximize: bool = false,
 
 /// Start new windows in fullscreen. This setting applies to new windows and
 /// does not apply to tabs, splits, etc. However, this setting will apply to all
@@ -11695,18 +11696,18 @@ test "term3: GNOME dark color scheme by default, like GNOME Terminal" {
     try testing.expectEqual(terminal.color.RGB{ .r = 0xFF, .g = 0x00, .b = 0x00 }, cfg.palette.value[1]);
 }
 
-test "term3: start maximized by default" {
+test "term3: start unmaximized by default" {
     const testing = std.testing;
     var cfg = try Config.default(testing.allocator);
     defer cfg.deinit();
 
-    // term3 starts maximized by default
-    try testing.expect(cfg.maximize);
+    // term3 starts unmaximized by default (avoids Mutter BUG-001)
+    try testing.expect(!cfg.maximize);
 
     // Config overrides work as expected
     var it: TestIterator = .{ .data = &.{
-        "--maximize=false",
+        "--maximize=true",
     } };
     try cfg.loadIter(testing.allocator, &it);
-    try testing.expect(!cfg.maximize);
+    try testing.expect(cfg.maximize);
 }
