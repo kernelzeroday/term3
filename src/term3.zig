@@ -12,7 +12,7 @@ const std = @import("std");
 ///
 /// Pre-releases use semver's `-rc.N` form; see term3/RELEASING.md.
 /// `term3/scripts/version.sh` reads this line, so keep it a single literal.
-pub const version = "0.1.0-rc.5";
+pub const version = "0.1.0-rc.6";
 
 /// Which side of the window the tab sidebar is on.
 pub const Side = enum { left, right };
@@ -417,3 +417,79 @@ test "term3: property: abbreviateHome round-trips and never grows" {
         }
     }
 }
+
+/// Update or set the `maximize = <val>` key in a configuration file's text content.
+/// If a `maximize = ...` line exists, it is replaced in place.
+/// Otherwise, `maximize = <val>\n` is appended.
+pub fn setConfigMaximize(alloc: std.mem.Allocator, content: []const u8, val: bool) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(alloc);
+
+    const val_str = if (val) "maximize = true" else "maximize = false";
+
+    var found = false;
+    var line_it = std.mem.splitScalar(u8, content, '\n');
+    var is_first = true;
+    while (line_it.next()) |line| {
+        if (!is_first) {
+            try out.append(alloc, '\n');
+        }
+        is_first = false;
+
+        const trimmed = std.mem.trim(u8, line, " \t\r");
+        if (std.mem.startsWith(u8, trimmed, "maximize") and
+            (trimmed.len == 8 or trimmed[8] == ' ' or trimmed[8] == '=' or trimmed[8] == '\t'))
+        {
+            try out.appendSlice(alloc, val_str);
+            found = true;
+        } else {
+            try out.appendSlice(alloc, line);
+        }
+    }
+
+    if (!found) {
+        if (out.items.len > 0 and out.items[out.items.len - 1] != '\n') {
+            try out.append(alloc, '\n');
+        }
+        try out.appendSlice(alloc, val_str);
+        try out.append(alloc, '\n');
+    } else {
+        if (out.items.len > 0 and out.items[out.items.len - 1] != '\n') {
+            try out.append(alloc, '\n');
+        }
+    }
+
+    return out.toOwnedSlice(alloc);
+}
+
+test "term3: setConfigMaximize empty" {
+    const alloc = testing.allocator;
+    const res = try setConfigMaximize(alloc, "", true);
+    defer alloc.free(res);
+    try testing.expectEqualStrings("maximize = true\n", res);
+
+    const res_f = try setConfigMaximize(alloc, "", false);
+    defer alloc.free(res_f);
+    try testing.expectEqualStrings("maximize = false\n", res_f);
+}
+
+test "term3: setConfigMaximize replace existing" {
+    const alloc = testing.allocator;
+    const input = "# Term3 config\nfont-size = 14\nmaximize = true\ngtk-tabs-location = left\n";
+    const res = try setConfigMaximize(alloc, input, false);
+    defer alloc.free(res);
+    try testing.expectEqualStrings("# Term3 config\nfont-size = 14\nmaximize = false\ngtk-tabs-location = left\n", res);
+
+    const res2 = try setConfigMaximize(alloc, res, true);
+    defer alloc.free(res2);
+    try testing.expectEqualStrings("# Term3 config\nfont-size = 14\nmaximize = true\ngtk-tabs-location = left\n", res2);
+}
+
+test "term3: setConfigMaximize append if missing" {
+    const alloc = testing.allocator;
+    const input = "# Term3 config\nfont-size = 14\n";
+    const res = try setConfigMaximize(alloc, input, true);
+    defer alloc.free(res);
+    try testing.expectEqualStrings("# Term3 config\nfont-size = 14\nmaximize = true\n", res);
+}
+

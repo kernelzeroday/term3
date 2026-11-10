@@ -26,6 +26,7 @@ const terminal = @import("../../../terminal/main.zig");
 const xev = global.xev;
 const Binding = @import("../../../input.zig").Binding;
 const CoreConfig = configpkg.Config;
+const term3 = @import("../../../term3.zig");
 const term3_system_font = @import("../term3_system_font.zig");
 const CoreSurface = @import("../../../Surface.zig");
 
@@ -1489,6 +1490,9 @@ pub const Application = extern struct {
         const s_variant_type = glib.ext.VariantType.newFor([:0]const u8);
         defer s_variant_type.free();
 
+        const config = self.private().config.get();
+        const start_maximized_state = glib.Variant.newBoolean(@intFromBool(config.maximize));
+
         const actions = [_]ext.actions.Action(Self){
             .init("new-window", actionNewWindow, null),
             .init("new-window-command", actionNewWindow, as_variant_type),
@@ -1499,6 +1503,12 @@ pub const Application = extern struct {
             .init("reload-config", actionReloadConfig, null),
             .init("toggle-quick-terminal", actionToggleQuickTerminal, null),
             .init("ring-bell", actionRingBell, null),
+            .initStateful(
+                "toggle-start-maximized",
+                actionToggleStartMaximized,
+                null,
+                start_maximized_state,
+            ),
         };
 
         ext.actions.add(Self, self, &actions);
@@ -1807,6 +1817,59 @@ pub const Application = extern struct {
         priv.core_app.performAction(self.rt(), .toggle_quick_terminal) catch |err| {
             log.warn("error toggling quick terminal err={}", .{err});
         };
+    }
+
+    fn actionToggleStartMaximized(
+        action: *gio.SimpleAction,
+        _: ?*glib.Variant,
+        self: *Self,
+    ) callconv(.c) void {
+        const state = action.as(gio.Action).getState() orelse return;
+        defer state.unref();
+        const bool_variant_type = glib.ext.VariantType.newFor(bool);
+        defer bool_variant_type.free();
+        if (state.isOfType(bool_variant_type) == 0) return;
+        const current_val = state.getBoolean() != 0;
+        const new_val = !current_val;
+
+        action.setState(glib.Variant.newBoolean(@intFromBool(new_val)));
+        self.private().config.getMut().maximize = new_val;
+
+        const alloc = self.allocator();
+        persistStartMaximized(alloc, new_val) catch |err| {
+            log.warn("failed to persist start-maximized setting: {s}", .{@errorName(err)});
+        };
+    }
+
+    fn persistStartMaximized(alloc: Allocator, new_val: bool) !void {
+        const config_path = try configpkg.edit.openPath(alloc);
+        defer alloc.free(config_path);
+
+        const file = std.Io.Dir.openFileAbsolute(global.io(), config_path, .{}) catch |err| switch (err) {
+            error.FileNotFound => null,
+            else => return err,
+        };
+
+        const existing = if (file) |f| existing: {
+            defer f.close(global.io());
+            break :existing try compat_file.readToEndAlloc(f, alloc, 10 * 1024 * 1024);
+        } else try alloc.dupe(u8, "");
+        defer alloc.free(existing);
+
+        const updated = try term3.setConfigMaximize(alloc, existing, new_val);
+        defer alloc.free(updated);
+
+        var out_file = try std.Io.Dir.createFileAbsolute(
+            global.io(),
+            config_path,
+            .{ .truncate = true },
+        );
+        defer out_file.close(global.io());
+
+        var buf: [1024]u8 = undefined;
+        var w = out_file.writer(global.io(), &buf);
+        try w.interface.writeAll(updated);
+        try w.interface.flush();
     }
 
     fn actionQuit(

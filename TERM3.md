@@ -42,7 +42,9 @@ into the titlebar).
 
 | Doc | What |
 | --- | --- |
-| [term3/SCOPE.md](term3/SCOPE.md) | What term3 is and isn't, the test for new features, and the roadmap |
+| [term3/SCOPE.md](term3/SCOPE.md) | What term3 is and isn't, and the test for new features |
+| [term3/ROADMAP.md](term3/ROADMAP.md) | 0.1.0 release plan and the transition to replace Zig with Rust |
+| [BUGS.md](BUGS.md) | Known issues, investigations, and bug tracker |
 | [term3/RELEASING.md](term3/RELEASING.md) | Versioning, tags (`term3-vX.Y.Z`), the release checklist, upstream merges |
 | [term3/VENDORING.md](term3/VENDORING.md) | Every bundled dependency, what's system vs bundled, and the unvendoring plan |
 | [term3/TESTING.md](term3/TESTING.md) | Test tiers: unit, property, smoke, headless GUI, valgrind |

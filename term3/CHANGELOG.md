@@ -3,6 +3,25 @@
 term3 versions follow [semver](https://semver.org); see [RELEASING.md](RELEASING.md).
 Each release notes the Ghostty version it is built on.
 
+## 0.1.0-rc.6
+
+Built on Ghostty 1.4.1-dev (main at f28124c73).
+
+### Added
+- **UI Toggle for "Start Maximized" in Settings menu.** The primary hamburger
+  menu now features a "Settings" dropdown with a stateful "Start Maximized"
+  checkbox toggle (`app.toggle-start-maximized`). Toggling it immediately
+  updates the runtime preference for subsequent windows and persists
+  `maximize = true/false` directly to `~/.config/term3/config` without requiring
+  manual text editing.
+
+### Fixed
+- **Unmaximizing window placing it off-screen (BUG-001).** When launching
+  maximized on startup, maximization is now scheduled on an idle tick after
+  window presentation. This ensures Mutter on Wayland maps and centers the
+  large floating geometry first, so unmaximizing via header bar double-click
+  or the restore button cleanly restores the centered window on screen.
+
 ## 0.1.0-rc.5
 
 Built on Ghostty 1.4.1-dev (main at f28124c73).

@@ -321,7 +321,12 @@ menu main_menu {
     }
 
     submenu {
-      label: _("Config");
+      label: _("Settings");
+
+      item {
+        label: _("Start Maximized");
+        action: "app.toggle-start-maximized";
+      }
 
       item {
         label: _("Open Configuration in OS Editor");

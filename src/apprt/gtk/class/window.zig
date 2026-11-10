@@ -406,7 +406,13 @@ pub const Window = extern struct {
             }
         }
 
-        if (config.maximize) self.as(gtk.Window).maximize();
+        // term3: when maximized on startup, defer to an idle tick so that
+        // Mutter maps and centers the unmaximized window geometry first.
+        // This ensures unmaximizing later (e.g. double-click header bar)
+        // restores cleanly on screen instead of jumping off-screen.
+        if (config.maximize) {
+            _ = glib.idleAddOnce(idleMaximize, self.as(gobject.Object).ref());
+        }
         if (config.fullscreen != .false) self.as(gtk.Window).fullscreen();
 
         // If we have an explicit title set, we set that immediately
@@ -1379,6 +1385,13 @@ pub const Window = extern struct {
         self: *Self,
     ) callconv(.c) void {
         self.syncAppearance();
+    }
+
+    fn idleMaximize(ud: ?*anyopaque) callconv(.c) void {
+        const obj: *gobject.Object = @ptrCast(@alignCast(ud orelse return));
+        defer obj.unref();
+        const self = gobject.ext.cast(Self, obj) orelse return;
+        self.as(gtk.Window).maximize();
     }
 
     fn propMenuActive(

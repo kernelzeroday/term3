@@ -36,6 +36,9 @@ If not, it doesn't go in term3. Use upstream Ghostty, or open an issue there.
 
 ## Roadmap (in scope, not done yet)
 
+See [ROADMAP.md](ROADMAP.md) for the 0.1.0 release milestone and the upcoming
+transition to replace Zig with Rust.
+
 Ordered roughly by priority. Each item must still pass the test above.
 
 1. **Settings window.** A real preferences UI for common options (font,
