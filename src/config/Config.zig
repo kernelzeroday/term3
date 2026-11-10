@@ -9004,7 +9004,8 @@ pub const ShellIntegration = enum {
 pub const ShellIntegrationFeatures = packed struct {
     // term3: GNOME Terminal keeps a block cursor at the prompt.
     cursor: bool = false,
-    sudo: bool = false,
+    // term3: preserve terminfo through sudo invocations by default.
+    sudo: bool = true,
     title: bool = true,
     @"ssh-env": bool = false,
     @"ssh-terminfo": bool = false,
@@ -11592,6 +11593,17 @@ test "term3: block cursor at the prompt by default, like GNOME Terminal" {
     var it: TestIterator = .{ .data = &.{"--shell-integration-features=cursor"} };
     try cfg.loadIter(testing.allocator, &it);
     try testing.expect(cfg.@"shell-integration-features".cursor);
+}
+
+test "term3: sudo shell integration is enabled by default to preserve terminfo" {
+    const testing = std.testing;
+    var cfg = try Config.default(testing.allocator);
+    defer cfg.deinit();
+    try testing.expect(cfg.@"shell-integration-features".sudo);
+
+    var it: TestIterator = .{ .data = &.{"--shell-integration-features=no-sudo"} };
+    try cfg.loadIter(testing.allocator, &it);
+    try testing.expect(!cfg.@"shell-integration-features".sudo);
 }
 
 test "term3: system font is the default and config replaces it" {

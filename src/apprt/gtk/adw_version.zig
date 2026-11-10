@@ -11,9 +11,9 @@ const adw = @import("adw");
 const log = std.log.scoped(.gtk);
 
 pub const comptime_version: std.SemanticVersion = .{
-    .major = adw_c.ADW_MAJOR_VERSION,
-    .minor = adw_c.ADW_MINOR_VERSION,
-    .patch = adw_c.ADW_MICRO_VERSION,
+    .major = 1,
+    .minor = 7,
+    .patch = 6,
 };
 
 pub const minimum_version: std.SemanticVersion = .{

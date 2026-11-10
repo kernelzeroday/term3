@@ -27,6 +27,10 @@ comptime {
     _ = @import("quirks_memset.zig");
 }
 
+export fn gtk_interface_color_scheme_get_type() callconv(.c) usize {
+    return 0;
+}
+
 test {
     // Zig 0.16.0 has made test logging more strict. Now, *anything* that gets
     // printed to stderr results in a "failed command" message, even if the

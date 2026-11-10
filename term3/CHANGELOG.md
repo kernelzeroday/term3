@@ -3,6 +3,22 @@
 term3 versions follow [semver](https://semver.org); see [RELEASING.md](RELEASING.md).
 Each release notes the Ghostty version it is built on.
 
+## 0.1.0-rc.4
+
+Built on Ghostty 1.4.1-dev (main at f28124c73).
+
+### Fixed
+- **`xterm-ghostty` terminfo not found in `sudo -s`, `sudo -i`, `su`, or root subshells.**
+  rc.2 placed the compiled terminfo only in `/usr/share/term3/terminfo` and relied
+  on the `TERMINFO` environment variable. When running `sudo -s` or switching users,
+  `sudo`'s `env_reset` strips `TERMINFO`, causing programs like `htop`, `vim`, and `nano`
+  to fail with `Error opening terminal: xterm-ghostty`. term3 now also installs
+  `xterm-ghostty` into the standard system terminfo path (`/usr/share/terminfo/x/xterm-ghostty`)
+  so it resolves in all contexts without requiring environment variables.
+- **Enable `sudo` shell integration by default.** `shell-integration-features` now
+  enables `sudo` by default so terminal sessions automatically preserve `TERMINFO`
+  via `sudo --preserve-env=TERMINFO` when invoking commands across remote hosts.
+
 ## 0.1.0-rc.3
 
 Built on Ghostty 1.4.1-dev (main at f28124c73).

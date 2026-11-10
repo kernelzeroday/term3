@@ -10,9 +10,9 @@ const gtk = @import("gtk");
 const log = std.log.scoped(.gtk);
 
 pub const comptime_version: std.SemanticVersion = .{
-    .major = gtk_c.GTK_MAJOR_VERSION,
-    .minor = gtk_c.GTK_MINOR_VERSION,
-    .patch = gtk_c.GTK_MICRO_VERSION,
+    .major = 4,
+    .minor = 18,
+    .patch = 6,
 };
 
 pub const minimum_version: std.SemanticVersion = .{

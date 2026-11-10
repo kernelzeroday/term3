@@ -64,6 +64,10 @@ ti="$(dirname "$bin")/../share/term3/terminfo"
 check "private terminfo describes xterm-ghostty with E3 (Ctrl+L clears scrollback)" \
   bash -c "TERMINFO='$ti' infocmp -x xterm-ghostty | grep -qF 'E3=\\E[3J'"
 
+sti="$(dirname "$bin")/../share/terminfo"
+check "system terminfo describes xterm-ghostty with E3 without TERMINFO env" \
+  bash -c "infocmp -x -A '$sti' xterm-ghostty | grep -qF 'E3=\\E[3J'"
+
 echo
 echo "smoke: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

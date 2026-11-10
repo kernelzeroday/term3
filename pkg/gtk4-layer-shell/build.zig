@@ -55,6 +55,10 @@ fn buildLib(b: *std.Build, options: anytype) !*std.Build.Step.Compile {
         .preferred_link_mode = .dynamic,
         .search_strategy = .mode_first,
     });
+    lib.root_module.linkSystemLibrary("wayland-client", .{
+        .preferred_link_mode = .dynamic,
+        .search_strategy = .mode_first,
+    });
 
     // local deps (non-system layer-shell/wayland)
     const deps = try LocalDeps.get(b) orelse return lib;

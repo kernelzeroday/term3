@@ -91,7 +91,7 @@ zig build                         # debug build (slow, shows a warning)
 | App ID | `io.github.kernelzeroday.term3` (D-Bus, desktop file, icon, WM class) |
 | Config | `~/.config/term3/config` (Ghostty's format; a Ghostty config can be copied over as-is) |
 | Themes | `~/.config/term3/themes/` |
-| Terminfo | `/usr/share/term3/terminfo` (private; `TERMINFO` points here, so `TERM=xterm-ghostty` always resolves) |
+| Terminfo | `/usr/share/terminfo/x/xterm-ghostty` (system) and `/usr/share/term3/terminfo` (private; works under sudo/su without env vars) |
 
 term3 doesn't collide with a stock Ghostty install. What deliberately
 stays "ghostty" for compatibility: `TERM=xterm-ghostty`, `TERM_PROGRAM`,

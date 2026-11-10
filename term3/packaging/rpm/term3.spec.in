@@ -128,13 +128,14 @@ DESTDIR=%{buildroot} .zig/zig build --prefix %{_prefix} %{zig_flags}
 
 # Files keyed to the `ghostty` command name: wrong for `term3` and would
 # conflict with a Ghostty package. term3 versions are on the roadmap.
+# Note: we keep %{_datadir}/terminfo/x/xterm-ghostty so root/sudo/su resolve TERM.
 rm -rf %{buildroot}%{_datadir}/bash-completion \
        %{buildroot}%{_datadir}/zsh \
        %{buildroot}%{_datadir}/fish \
        %{buildroot}%{_datadir}/bat \
        %{buildroot}%{_datadir}/vim \
        %{buildroot}%{_datadir}/nvim \
-       %{buildroot}%{_datadir}/terminfo \
+       %{buildroot}%{_datadir}/terminfo/ghostty.* \
        %{buildroot}%{_mandir}
 
 %find_lang %{appid}
@@ -142,15 +143,17 @@ rm -rf %{buildroot}%{_datadir}/bash-completion \
 %check
 desktop-file-validate %{buildroot}%{_datadir}/applications/%{appid}.desktop || :
 %{buildroot}%{_bindir}/term3 +version | grep -q '^term3 %{tarball_version} '
-# The private terminfo must describe TERM=xterm-ghostty including E3 (clear
-# scrollback), which bash's Ctrl+L uses. Regression from 0.1.0-rc.1.
+# Both the private and system terminfo must describe TERM=xterm-ghostty including
+# E3 (clear scrollback), which bash's Ctrl+L uses.
 TERMINFO=%{buildroot}%{_datadir}/term3/terminfo infocmp -x xterm-ghostty | grep -qF 'E3=\E[3J'
+infocmp -x -A %{buildroot}%{_datadir}/terminfo xterm-ghostty | grep -qF 'E3=\E[3J'
 
 %files -f %{appid}.lang
 %license LICENSE
 %doc README.md TERM3.md term3/SCOPE.md term3/VENDORING.md term3/CHANGELOG.md
 %{_bindir}/term3
 %{_datadir}/term3/
+%{_datadir}/terminfo/x/xterm-ghostty
 %{_datadir}/applications/%{appid}.desktop
 %{_datadir}/dbus-1/services/%{appid}.service
 %{_datadir}/icons/hicolor/*/apps/%{appid}.png

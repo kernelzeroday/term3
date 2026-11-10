@@ -86,19 +86,27 @@ pub fn init(b: *std.Build, cfg: *const Config, deps: *const SharedDeps) !Ghostty
             run_step.addFileArg(source);
             _ = run_step.captureStdErr(.{}); // so we don't see stderr
 
-            const install_step = b.addInstallDirectory(.{
+            // System terminfo database (share/terminfo on Linux): needed so that
+            // programs running without $TERMINFO (e.g. root in `sudo -s`, `sudo -i`,
+            // `su`, or clean containers) can resolve TERM=xterm-ghostty via the standard
+            // ncurses search path.
+            const install_step_system = b.addInstallDirectory(.{
                 .source_dir = path,
                 .install_dir = .{ .custom = "share" },
-                // term3: a private terminfo database (share/term3/terminfo)
-                // so it can't conflict with ncurses-term or a Ghostty
-                // package. Fedora's ncurses-term only has `ghostty`, not
-                // `xterm-ghostty`, so the system database isn't enough.
-                .install_subdir = if (os_tag == .linux)
-                    "term3/terminfo"
-                else
-                    terminfo_share_dir,
+                .install_subdir = terminfo_share_dir,
             });
-            try steps.append(b.allocator, &install_step.step);
+            try steps.append(b.allocator, &install_step_system.step);
+
+            // term3: also install into private database (share/term3/terminfo)
+            // for backwards compatibility with any tooling referencing it.
+            if (os_tag == .linux) {
+                const install_step_private = b.addInstallDirectory(.{
+                    .source_dir = path,
+                    .install_dir = .{ .custom = "share" },
+                    .install_subdir = "term3/terminfo",
+                });
+                try steps.append(b.allocator, &install_step_private.step);
+            }
         }
     }
 
