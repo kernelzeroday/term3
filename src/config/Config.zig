@@ -1503,7 +1503,8 @@ link: RepeatableLink = .{},
 /// will apply to all new windows, not just the first one.
 ///
 /// Available since: 1.1.0
-maximize: bool = false,
+// term3: start maximized by default.
+maximize: bool = true,
 
 /// Start new windows in fullscreen. This setting applies to new windows and
 /// does not apply to tabs, splits, etc. However, this setting will apply to all
@@ -11692,4 +11693,20 @@ test "term3: GNOME dark color scheme by default, like GNOME Terminal" {
     try testing.expectEqual(Color{ .r = 0x00, .g = 0x00, .b = 0x00 }, cfg.background);
     try testing.expectEqual(Color{ .r = 0xFF, .g = 0xFF, .b = 0xFF }, cfg.foreground);
     try testing.expectEqual(terminal.color.RGB{ .r = 0xFF, .g = 0x00, .b = 0x00 }, cfg.palette.value[1]);
+}
+
+test "term3: start maximized by default" {
+    const testing = std.testing;
+    var cfg = try Config.default(testing.allocator);
+    defer cfg.deinit();
+
+    // term3 starts maximized by default
+    try testing.expect(cfg.maximize);
+
+    // Config overrides work as expected
+    var it: TestIterator = .{ .data = &.{
+        "--maximize=false",
+    } };
+    try cfg.loadIter(testing.allocator, &it);
+    try testing.expect(!cfg.maximize);
 }

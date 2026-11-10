@@ -36,7 +36,8 @@ for kv in "gtk-tabs-location = left" "gtk-sidebar-width = 220" \
           "gtk-sidebar-title-overflow = ellipsize" "gtk-sidebar-title-lines = 2" \
           "gtk-sidebar-subtitle = working-directory" \
           "background = #171421" "foreground = #d0cfcc" \
-          "palette = 0=#171421" "palette = 1=#c01c28"; do
+          "palette = 0=#171421" "palette = 1=#c01c28" \
+          "maximize = true"; do
   check "default: $kv" grep -qxF "$kv" <<<"$defaults"
 done
 

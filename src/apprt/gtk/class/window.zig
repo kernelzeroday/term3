@@ -386,6 +386,26 @@ pub const Window = extern struct {
         self.initActionMap();
 
         // Start states based on config.
+        // term3: default to a large window size (similar to a browser window
+        // occupying the majority of the screen) when the window is unmaximized / small,
+        // unless explicit window-width and window-height are configured.
+        if (config.@"window-width" == 0 or config.@"window-height" == 0) {
+            const display = self.as(gtk.Widget).getDisplay();
+            const monitors = display.getMonitors();
+            if (monitors.getObject(0)) |item| {
+                defer item.unref();
+                if (gobject.ext.cast(gdk.Monitor, item)) |mon| {
+                    var geom: gdk.Rectangle = undefined;
+                    mon.getGeometry(&geom);
+                    if (geom.f_width > 0 and geom.f_height > 0) {
+                        const target_w: c_int = @min(geom.f_width, @max(800, @as(c_int, @intFromFloat(@round(@as(f32, @floatFromInt(geom.f_width)) * 0.80)))));
+                        const target_h: c_int = @min(geom.f_height, @max(600, @as(c_int, @intFromFloat(@round(@as(f32, @floatFromInt(geom.f_height)) * 0.80)))));
+                        self.as(gtk.Window).setDefaultSize(target_w, target_h);
+                    }
+                }
+            }
+        }
+
         if (config.maximize) self.as(gtk.Window).maximize();
         if (config.fullscreen != .false) self.as(gtk.Window).fullscreen();
 

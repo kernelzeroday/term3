@@ -30,6 +30,7 @@ If not, it doesn't go in term3. Use upstream Ghostty, or open an issue there.
 | GNOME desktop monospace font as the default font (like GNOME Terminal) | 0.1 |
 | Block cursor at the prompt (like GNOME Terminal) | 0.1 |
 | GNOME Terminal "GNOME dark" color scheme and palette as default | 0.1 |
+| Default to maximized window, and large browser-proportioned restore size | 0.1 |
 | term3 identity: binary, app ID, config dir, icon, About | 0.1 |
 | RPM packaging, tagged releases, test suite | 0.1 |
 

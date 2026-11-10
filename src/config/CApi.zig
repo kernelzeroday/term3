@@ -152,12 +152,12 @@ test "ghostty_config_get: bool" {
 
     var cfg = try Config.default(alloc);
     defer cfg.deinit();
-    cfg.maximize = true;
+    cfg.maximize = false;
 
-    var out = false;
+    var out = true;
     const key = "maximize";
     try testing.expect(ghostty_config_get(&cfg, &out, key, key.len));
-    try testing.expect(out);
+    try testing.expect(!out);
 }
 
 test "ghostty_config_get: enum" {

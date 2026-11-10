@@ -3,6 +3,19 @@
 term3 versions follow [semver](https://semver.org); see [RELEASING.md](RELEASING.md).
 Each release notes the Ghostty version it is built on.
 
+## 0.1.0-rc.5
+
+Built on Ghostty 1.4.1-dev (main at f28124c73).
+
+### Added
+- **Default to maximized window on launch.** term3 now opens new windows in
+  a maximized state by default (`maximize = true`). Explicit configuration
+  and `--maximize=false` continue to work as expected.
+- **Large browser-proportioned restore size.** When unmaximized, or when
+  running without maximize, term3 now sizes windows to occupy the majority
+  of the screen (80% width and 80% height, minimum 800×600) like a typical
+  modern browser, instead of shrinking into a tiny 800×600 box.
+
 ## 0.1.0-rc.4
 
 Built on Ghostty 1.4.1-dev (main at f28124c73).
