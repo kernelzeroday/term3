@@ -80,3 +80,102 @@ In `0.1.0-rc.6`, initialization was changed to defer `maximize()` using `glib.id
 
 2. **Option 2: Wayland / Mutter Session Geometry State Restoration:**
    - Rather than hardcoding window states in client initialization paths, rely on desktop session state or GSettings window state persistence.
+
+---
+
+## BUG-002: CLI status bar playback triangles (U+23F5 ⏵) render as '?' replacement glyphs
+
+- **Discovered:** 2026-11-10
+- **Environment:** Debian 13 (Trixie), GNOME Shell 48.x, term3 0.1.0-rc.6
+- **Severity:** Medium (missing glyphs / visual degradation in modern CLI tools like Claude Code / Antigravity)
+- **Status:** Fixed in 0.1.0-rc.7 via Option 2 (`DeferredFace.Fontconfig.presentation()` requires `FC_COLOR` in addition to `und-zsye`). Workaround for older builds: `font-codepoint-map = U+23F4-U+23FA=Symbola`
+
+### Description
+When running CLI tools that display status indicators with playback symbols—such as
+Claude Code's status bar:
+```text
+  ⏵⏵ bypass permissions on · 1 shell · esc to interrupt · ↓ to manage
+```
+the indicator characters `⏵` (Unicode `U+23F5 BLACK MEDIUM RIGHT-POINTING TRIANGLE`)
+fail to render in term3 and instead display as `?` glyphs:
+```text
+  ?? bypass permissions on · 1 shell · esc to interrupt · ↓ to manage
+```
+The remaining characters (`·` `U+00B7`, `↓` `U+2193`) render normally.
+
+In contrast, **GNOME Terminal renders this string completely and cleanly**, confirming
+that the system has the requisite fonts and that the failure is caused by term3's font
+fallback/filtering pipeline.
+
+### Reproduction Steps
+1. Launch `term3` alongside `gnome-terminal`.
+2. In both terminals, execute:
+   ```bash
+   printf "  \u23f5\u23f5 bypass permissions on \u00b7 1 shell \u00b7 esc to interrupt \u00b7 \u2193 to manage\n"
+   ```
+3. **Observed in term3:** The two `⏵` symbols render as question mark `?` icons (Unicode Replacement Character `U+FFFD`).
+4. **Observed in gnome-terminal:** The two `⏵` symbols render as crisp, solid right-pointing triangles `⏵⏵`.
+5. **Expected:** term3 should render the fallback glyph identically to GNOME Terminal.
+
+### Investigation & Technical Root Cause
+
+1. **Why GNOME Terminal Works:**
+   - GNOME Terminal / VTE uses Pango and HarfBuzz for text shaping and font fallback.
+   - Tracing Pango's itemizer (`pango_itemize`) for `U+23F5` under `Monospace 11`:
+     ```text
+     Item offset 0 len 1 font: Symbola Semi-Condensed 12
+     ```
+     Pango queries Fontconfig, receives `Symbola` (`/usr/share/fonts/truetype/ancient-scripts/Symbola_hint.ttf`, installed via `fonts-symbola`), verifies that the glyph exists in `Symbola`, and renders it.
+
+2. **Why term3 Rejects the Exact Same Font:**
+   - Under Fontconfig, term3's `disco.discoverFallback()` creates a pattern with `FC_CHARSET = { 0x23F5 }` and runs `FcFontSort()`.
+   - Running `FcFontSort()` with term3's exact query pattern confirms that **`Symbola` is returned as match #0**:
+     ```text
+     [0] Symbola (Symbola_hint.ttf): has_cp=1, has_und_zsye=1
+     [1] DejaVu Sans Mono (DejaVuSansMono.ttf): has_cp=0
+     ...
+     ```
+   - When term3 inspects match #0 (`Symbola`) in `src/font/CodepointResolver.zig`, it checks `face.hasCodepoint(cp, p_mode)`:
+     ```zig
+     // src/font/DeferredFace.zig:342-353
+     const emoji_lang = "und-zsye";
+     const is_emoji = switch (fc.langset) {
+         .lang_set => |ls| ls.hasLang(emoji_lang),
+         .string => |s| std.mem.eql(u8, s, emoji_lang),
+         else => |v| false,
+     };
+     const actual: Presentation = if (is_emoji) .emoji else .text;
+     return desired == actual;
+     ```
+   - Because `Symbola` includes Unicode emoji blocks, Fontconfig tags `Symbola` with the language tag `und-zsye` (Emoji script).
+   - `DeferredFace` assumes that *any* font whose `langset` includes `und-zsye` is strictly an `.emoji` font (`actual = .emoji`), ignoring that it is an outline text font (`FC_COLOR = False`) supporting hundreds of scripts and mathematical/technical symbols.
+   - For `U+23F5`, `desired` is `.text` (`uucode.get(.is_emoji_presentation, 0x23F5) == false`).
+   - Because `desired (.text) != actual (.emoji)`, `DeferredFace.hasCodepoint()` returns `false` and **discards `Symbola`**!
+   - None of the remaining candidate fonts in the Fontconfig result set contain `U+23F5`. Discovery ends with `no fallback face found for cp=23F5`.
+
+3. **Shaper Fallback to `U+FFFD`:**
+   - When discovery returns no face, `src/font/shaper/run.zig:231-236` substitutes `0xFFFD` (Unicode Replacement Character ``).
+   - In `DejaVu Sans Mono`, `0xFFFD` renders as `?` inside a box/diamond glyph, producing the visible `?` icons.
+
+4. **Absence of Built-in Sprite Fallback:**
+   - While term3 / Ghostty includes a vector sprite renderer (`src/font/sprite/`) for common terminal symbols (Box Drawing, Block Elements, Braille, Powerline, legacy computing), `U+23F4..U+23F7` (medium triangles) are not currently implemented.
+
+### Evaluated Solutions & Recommended Fixes
+
+1. **Option 1: Add Sprite Rasterization for `U+23F4..U+23F7` (Recommended):**
+   - Implement draw functions in `src/font/sprite/draw/` (e.g. in `geometric_shapes.zig` or a new `technical.zig`) for:
+     - `U+23F4` (`⏴` BLACK MEDIUM LEFT-POINTING TRIANGLE)
+     - `U+23F5` (`⏵` BLACK MEDIUM RIGHT-POINTING TRIANGLE)
+     - `U+23F6` (`⏶` BLACK MEDIUM UP-POINTING TRIANGLE)
+     - `U+23F7` (`⏷` BLACK MEDIUM DOWN-POINTING TRIANGLE)
+   - **Benefits:**
+     - Completely self-contained: works regardless of which system fonts are installed or what OS/distro is running.
+     - Crisp, pixel-aligned vector rendering scaled to cell metrics.
+     - Eliminates reliance on external fallback fonts for CLI AV playback symbols.
+
+2. **Option 2: Correct Presentation Detection in `DeferredFace.zig`:**
+   - Under `.fontconfig_freetype`, check `FC_COLOR` rather than relying solely on `und-zsye` in `langset`, or do not restrict a font to `.emoji` only if it also contains text languages/scripts.
+   - Enables multi-purpose symbol fonts like `Symbola` to satisfy `.text` presentation fallback queries.
+
+3. **Combined Approach:**
+   - Implement Option 1 to give built-in, zero-dependency support for `U+23F4..U+23F7`, and Option 2 to fix general Fontconfig fallback for other non-color symbol fonts.

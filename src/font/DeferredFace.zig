@@ -57,6 +57,36 @@ pub const Fontconfig = struct {
         self.pattern.destroy();
         self.* = undefined;
     }
+
+    /// The presentation this font provides, derived from fontconfig
+    /// metadata without loading the face.
+    ///
+    /// A font is emoji presentation only if fontconfig tags it with the
+    /// emoji "language" (und-zsye) AND it is a color font. The color check
+    /// matters because monochrome outline fonts with broad symbol coverage
+    /// (e.g. Symbola) also get tagged und-zsye; treating them as emoji-only
+    /// made them unusable as text fallback (BUG-002). This matches the
+    /// loaded-face path (isColorGlyph) and the Windows backend (hasColor),
+    /// which both classify by color. If fontconfig doesn't report FC_COLOR
+    /// (older than 2.13.1) we fall back to the langset alone.
+    pub fn presentation(self: Fontconfig) Presentation {
+        const emoji_lang = "und-zsye";
+        const tagged_emoji = switch (self.langset) {
+            .lang_set => |ls| ls.hasLang(emoji_lang),
+            .string => |s| std.mem.eql(u8, s, emoji_lang),
+            else => |v| v: {
+                log.warn("fontconfig's pattern lang is neither a lang set or a string={}", .{v});
+                break :v false;
+            },
+        };
+        if (!tagged_emoji) return .text;
+
+        const color: bool = if (self.pattern.get(.color, 0)) |v| switch (v) {
+            .bool => |b| b,
+            else => true,
+        } else |_| true;
+        return if (color) .emoji else .text;
+    }
 };
 
 /// Windows specific data. Only present with the freetype_windows backend.
@@ -337,20 +367,7 @@ pub fn hasCodepoint(self: DeferredFace, cp: u32, p: ?Presentation) bool {
                 if (!fc.charset.hasChar(cp)) return false;
 
                 // If we have a presentation, check it matches
-                if (p) |desired| {
-                    const emoji_lang = "und-zsye";
-                    const is_emoji = switch (fc.langset) {
-                        .lang_set => |ls| ls.hasLang(emoji_lang),
-                        .string => |s| std.mem.eql(u8, s, emoji_lang),
-                        else => |v| v: {
-                            log.warn("fontconfig's pattern lang is neither a lang set or a string={}", .{v});
-                            break :v false;
-                        },
-                    };
-                    const actual: Presentation = if (is_emoji) .emoji else .text;
-
-                    return desired == actual;
-                }
+                if (p) |desired| return desired == fc.presentation();
 
                 return true;
             }
@@ -505,6 +522,50 @@ test "fontconfig" {
     var face = try def.load(lib, .{ .size = .{ .points = 12 } });
     defer face.deinit();
     try testing.expect(face.glyphIndex(' ') != null);
+}
+
+test "fontconfig presentation uses color, not just emoji langset" {
+    if (options.backend != .fontconfig_freetype) return error.SkipZigTest;
+
+    const testing = std.testing;
+
+    const ls = fontconfig.LangSet.create();
+    defer ls.destroy();
+    try testing.expect(ls.addLang("en"));
+    try testing.expect(ls.addLang("und-zsye"));
+
+    const cs = fontconfig.CharSet.create();
+    defer cs.destroy();
+    try testing.expect(cs.addChar(0x23F5));
+
+    const Case = struct { color: ?bool, expected: Presentation };
+    const cases = [_]Case{
+        // Monochrome symbol font tagged und-zsye (Symbola): text.
+        .{ .color = false, .expected = .text },
+        // Color emoji font (Noto Color Emoji): emoji.
+        .{ .color = true, .expected = .emoji },
+        // No FC_COLOR reported: fall back to langset.
+        .{ .color = null, .expected = .emoji },
+    };
+
+    for (cases) |case| {
+        const pat = fontconfig.Pattern.create();
+        try testing.expect(pat.add(.lang, .{ .lang_set = ls }, false));
+        try testing.expect(pat.add(.charset, .{ .char_set = cs }, false));
+        if (case.color) |c| try testing.expect(pat.add(.color, .{ .bool = c }, false));
+
+        var def: DeferredFace = .{ .fc = .{
+            .pattern = pat,
+            .charset = (try pat.get(.charset, 0)).char_set,
+            .langset = try pat.get(.lang, 0),
+            .variations = &.{},
+        } };
+        defer def.deinit();
+
+        try testing.expectEqual(case.expected, def.fc.?.presentation());
+        try testing.expect(def.hasCodepoint(0x23F5, case.expected));
+        try testing.expect(!def.hasCodepoint(0x23F5, if (case.expected == .text) .emoji else .text));
+    }
 }
 
 test "coretext" {

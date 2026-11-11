@@ -3,6 +3,18 @@
 term3 versions follow [semver](https://semver.org); see [RELEASING.md](RELEASING.md).
 Each release notes the Ghostty version it is built on.
 
+## 0.1.0-rc.7
+
+Built on Ghostty 1.4.1-dev (main at f28124c73).
+
+### Fixed
+- **Symbols such as ⏵ (U+23F5) rendering as `?` (BUG-002).** Fontconfig tags
+  broad monochrome symbol fonts like Symbola with the emoji language
+  (`und-zsye`), and term3 treated any such font as emoji-only, so it was
+  rejected as a text fallback. A font is now only classed as emoji if
+  Fontconfig also reports it as a color font, matching how loaded faces are
+  already classified.
+
 ## 0.1.0-rc.6
 
 Built on Ghostty 1.4.1-dev (main at f28124c73).
