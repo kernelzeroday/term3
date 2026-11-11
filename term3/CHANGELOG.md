@@ -14,6 +14,11 @@ Built on Ghostty 1.4.1-dev (main at f28124c73).
   rejected as a text fallback. A font is now only classed as emoji if
   Fontconfig also reports it as a color font, matching how loaded faces are
   already classified.
+- **"Start Maximized" windows unmaximizing off-screen (BUG-001).** The window
+  was mapped already maximized, so Mutter never recorded a floating position
+  and restored it with its top-left corner at the screen center. The window
+  now maps at its normal size and maximizes after its first frame, so
+  unmaximize returns it to the center of the screen.
 
 ## 0.1.0-rc.6
 

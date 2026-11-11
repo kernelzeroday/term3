@@ -300,6 +300,10 @@ pub const Window = extern struct {
         /// resizeSurface) that toplevelComputeSize should not override.
         resize_requested: bool = false,
 
+        /// term3: set once the first frame tick has run while a startup
+        /// maximize is pending. See maximizeAfterFirstFrame.
+        maximize_first_tick: bool = false,
+
         /// See tabOverviewOpen for why we have this.
         tab_overview_focus_timer: ?c_uint = null,
 
@@ -406,7 +410,17 @@ pub const Window = extern struct {
             }
         }
 
-        if (config.maximize) self.as(gtk.Window).maximize();
+        // term3: don't map the window already maximized. If the compositor
+        // never sees the window floating it has no floating geometry to
+        // restore, and on unmaximize Mutter places a zero-size rect: at the
+        // screen center with center-new-windows (window hangs off the
+        // bottom-right) or at the top-left otherwise. Map floating, then
+        // maximize after the first frame. See BUG-001.
+        if (config.maximize) _ = self.as(gtk.Widget).addTickCallback(
+            maximizeAfterFirstFrame,
+            null,
+            null,
+        );
         if (config.fullscreen != .false) self.as(gtk.Window).fullscreen();
 
         // If we have an explicit title set, we set that immediately
@@ -1049,6 +1063,25 @@ pub const Window = extern struct {
             widget.getHeight() + dh,
         );
         return true;
+    }
+
+    /// Frame clock tick callback that maximizes the window on its second
+    /// tick, i.e. after the first floating frame has been committed so the
+    /// compositor has placed the window and recorded its floating geometry.
+    fn maximizeAfterFirstFrame(
+        widget: *gtk.Widget,
+        _: *gdk.FrameClock,
+        _: ?*anyopaque,
+    ) callconv(.c) c_int {
+        const self = gobject.ext.cast(Self, widget) orelse return 0;
+        const priv = self.private();
+        if (!priv.maximize_first_tick) {
+            priv.maximize_first_tick = true;
+            return 1; // G_SOURCE_CONTINUE
+        }
+
+        self.as(gtk.Window).maximize();
+        return 0; // G_SOURCE_REMOVE
     }
 
     /// Returns the change in logical pixels from the current device pixel

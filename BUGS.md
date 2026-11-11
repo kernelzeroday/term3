@@ -10,7 +10,7 @@ and status of bugs identified in term3 releases and release candidates.
 - **Discovered:** 2026-11-10 (during 0.1.0-rc.5 soak testing)
 - **Environment:** Debian 13 (Trixie), GNOME Shell 48.x (Mutter), Wayland session
 - **Severity:** Low / Annoyance (recoverable via `<Super>+Up` or dragging titlebar)
-- **Status:** Resolved in 0.1.0-rc.6 via Option 1 (default `maximize = false` with 80% screen restore geometry and Settings UI toggle)
+- **Status:** Fixed in 0.1.0-rc.7. rc.6 only avoided it by defaulting `maximize = false`; with Start Maximized enabled it still reproduced. See "Confirmed Root Cause & Fix (0.1.0-rc.7)" below.
 
 ### Description
 When launching term3 with default settings (where `maximize = true` starts the
@@ -80,6 +80,34 @@ In `0.1.0-rc.6`, initialization was changed to defer `maximize()` using `glib.id
 
 2. **Option 2: Wayland / Mutter Session Geometry State Restoration:**
    - Rather than hardcoding window states in client initialization paths, rely on desktop session state or GSettings window state persistence.
+
+### Confirmed Root Cause & Fix (0.1.0-rc.7)
+Bisected on GNOME Shell 48.7 / Wayland, 1920×1200 at 100% scaling (fractional
+scaling ruled out):
+
+- An explicit `window-width`/`window-height` (which skips term3's 80% sizing
+  block) still reproduced, so term3's sizing code is **not** the cause.
+- `<Super>+Down` reproduced identically, so the header bar double-click is
+  **not** the cause.
+- A screenshot showed the restored window's top-left corner at the exact
+  screen center (≈960, 600).
+- With `org.gnome.mutter center-new-windows` set to `false` the window
+  restored to the top-left corner (0, 0) instead.
+
+So when a window is mapped already maximized, Mutter has no floating
+geometry for it and places a zero-size rect on unmaximize: centered (top-left
+corner at screen center, window hangs off the bottom-right) with
+`center-new-windows = true`, or at the origin otherwise. Deferring the
+`maximize()` call to an idle callback (rc.6) did not help because the
+request still reached Mutter before the first frame was committed.
+
+**Fix:** `src/apprt/gtk/class/window.zig` no longer calls `maximize()` during
+init. With `maximize = true` it adds a frame-clock tick callback
+(`maximizeAfterFirstFrame`) that maximizes on the second tick, i.e. after
+the first floating frame has been committed and Mutter has placed the window
+and recorded its floating geometry. Verified: unmaximize restores the window
+centered and fully on screen, and the one-frame floating state is not
+noticeable. `maximize = false` remains the default.
 
 ---
 
