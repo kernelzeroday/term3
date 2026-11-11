@@ -35,7 +35,7 @@ const adwaita_version = std.SemanticVersion{
 
 const required_blueprint_version = std.SemanticVersion{
     .major = 0,
-    .minor = 20,
+    .minor = 16,
     .patch = 0,
 };
 

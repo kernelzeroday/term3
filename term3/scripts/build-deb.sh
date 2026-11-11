@@ -18,7 +18,14 @@ deb_dir="/tmp/term3-deb"
 rm -rf "$stage" "$deb_dir"
 
 # Build with zig
+i18n_flags=()
+if ! command -v msgfmt >/dev/null 2>&1; then
+  i18n_flags=(-Di18n=false)
+fi
+
 DESTDIR="$stage" zig build \
+  -j"${ZIG_JOBS:-1}" \
+  "${i18n_flags[@]}" \
   --prefix /usr \
   --system "$root/.zig-deps" \
   -Doptimize=ReleaseFast \
@@ -41,7 +48,8 @@ DESTDIR="$stage" zig build \
   -fno-sys=zlib \
   -fno-sys=oniguruma \
   -fno-sys=gtk4-layer-shell \
-  -fno-sys=libxml2
+  -fno-sys=libxml2 \
+  "$@"
 
 mkdir -p "$deb_dir"
 cp -a "$stage"/* "$deb_dir"/
