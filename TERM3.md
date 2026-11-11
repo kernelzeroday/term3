@@ -3,6 +3,8 @@
 A Linux terminal with one opinion: **tabs live in a vertical sidebar on the
 left**, like iTerm2. Everything else is upstream Ghostty.
 
+![term3 0.1.0-rc.7 with the tab sidebar on the left](term3/screenshots/term3-0.1.0-rc.7.png)
+
 term3 is a small, easy-to-merge fork of [Ghostty](https://github.com/ghostty-org/ghostty)'s
 GTK4/libadwaita app. The patch touches the tab UI only; terminal emulation,
 rendering, fonts, config, shell integration, splits, etc. are Ghostty's.
