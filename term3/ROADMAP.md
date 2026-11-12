@@ -25,7 +25,9 @@ After that, `0.3.0` adds a settings UI and the behavior changes that need it.
   clean parity baseline.
 - **0.3.0 (Settings & behavior):** A proper graphical settings UI, plus
   behavior changes that should become user options rather than hardcoded
-  choices, starting with whitespace selection (see section 7).
+  choices, starting with whitespace selection (see section 7). Also the
+  **session server**: an iTerm2-style client/server architecture, so tabs can
+  move between any windows and shells outlive the UI.
 - **0.4.0 (maybe: native tmux integration):** iTerm2-style tmux integration.
   Large and complex, so not committed to (see section 8).
 
@@ -138,6 +140,12 @@ against `term3-v0.1.0` meaningful.
   - Extract and display cwd; hide when already prominent in tab title.
 
 ### Milestone 3: Terminal Emulation & PTY Engine
+
+**Architecture constraint (not a feature):** keep the PTY and terminal state
+behind an interface that doesn't assume it lives in the UI process. 0.2.0
+still runs everything in one process, but 0.3.0's session server (section 7)
+must be able to move this layer into a separate process without another
+rewrite.
 - [ ] Integrate PTY and terminal session supervisor:
   - PTY allocation with correct window dimensions (`winsize`).
   - Signal handling (`SIGWINCH`, `SIGHUP`, `SIGCHLD`).
@@ -180,7 +188,7 @@ against `term3-v0.1.0` meaningful.
 | **rust** (Branch) | Sidebar port | `TabSidebar` widget with reordering, overflow, & badges |
 | **rust** (Branch) | Parity | Feature-for-feature match with `term3-v0.1.0` |
 | **0.2.0** *(main)* | Pure Rust release | Zig fully removed; **no new features** |
-| **0.3.0** *(main)* | Settings & behavior | Preferences window; traditional defaults (new shells in `$HOME`, whitespace selection) |
+| **0.3.0** *(main)* | Settings, behavior & session server | Preferences window; traditional defaults (new shells in `$HOME`, whitespace selection); client/server sessions |
 | **0.4.0** *(maybe)* | tmux integration | Native tmux windows/panes as term3 tabs and splits |
 
 ---
@@ -233,6 +241,41 @@ option. Each one listed here is configurable today in `~/.config/term3/config`;
 - [ ] Note each changed default in the 0.3.0 changelog, so users who prefer
       Ghostty's behavior know which line restores it.
 - [ ] Keep adding rows here as more conventions come up during daily use.
+
+### Session Server (Client/Server Architecture)
+
+**The iTerm2 idea:** shells don't belong to a window. iTerm2 keeps each
+session's shell in a long-running server process, separate from the windows
+that draw it. That is what lets tabs move freely between windows and lets
+sessions survive the app restarting or crashing.
+
+**Today (0.1.0, and 0.2.0 by design):** each term3 process owns its PTYs and
+terminal state. Tabs can be dragged between windows only within one process
+(BUG-003), so a `term3` started from a shell can't exchange tabs with the
+desktop-launched one, and quitting term3 kills every shell.
+
+**Plan for 0.3.0:**
+- [ ] A per-user term3 session server owns the PTYs, child processes and
+      terminal state (screen, scrollback, modes). It starts on demand and is
+      reached over a Unix socket in `$XDG_RUNTIME_DIR`.
+- [ ] Windows are clients: they render a session and send input and resizes.
+      Any window of any term3 process can show any session.
+- [ ] Drag a tab to any term3 window, regardless of which process opened it;
+      this removes BUG-003's one-process limit and the `gtk-single-instance`
+      workaround.
+- [ ] Shells keep running when the UI quits or crashes; reopening term3
+      reattaches them (iTerm2's session restoration). Whether quitting the
+      app should also end its sessions becomes a setting.
+- [ ] Decide what lives where: rendering stays in the client; the server
+      keeps the terminal state needed to redraw a reattached session.
+
+**Open questions:**
+- [ ] One server per user, or one per session (iTerm2 has used both)?
+- [ ] Protocol: our own versus an existing multiplexer model (WezTerm's mux,
+      tmux control mode). This overlaps with 0.4.0's tmux integration, which
+      would plug tmux in as another kind of session source.
+- [ ] Security: socket permissions, and making sure only the user's own
+      clients can attach.
 
 ### Settings UI: First-Class Graphical Configuration (`AdwPreferencesWindow`)
 
@@ -297,6 +340,8 @@ reattaching, including over SSH, brings the same tabs back.
   attaching to a session that's already open elsewhere.
 
 **Open questions (to answer before committing):**
+- [ ] Can tmux be another session source behind 0.3.0's session server, so
+      tmux panes and local sessions share the same tab and split UI?
 - [ ] How much is achievable on the Rust codebase, and is there a reusable
       control-mode crate or do we write our own?
 - [ ] Minimum viable version: attach and show windows as tabs only, with
