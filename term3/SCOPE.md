@@ -1,6 +1,11 @@
 # term3 scope
 
-term3 is Ghostty's Linux (GTK) app with **one opinion: tabs live in a vertical
+**The idea: a GNOME Terminal-style successor to iTerm2.** A terminal for
+people leaving iTerm2 for Linux: iTerm2's good ideas (starting with the
+vertical tab sidebar), GNOME Terminal's look and native feel, traditional
+terminal behavior, and none of iTerm2's cruft.
+
+Today term3 is Ghostty's Linux (GTK) app with **one opinion: tabs live in a vertical
 sidebar on the left.** Everything that isn't about that sidebar, or about
 shipping term3 as its own installable app, belongs upstream in Ghostty.
 

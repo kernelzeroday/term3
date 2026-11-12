@@ -3,11 +3,14 @@
 `0.1.0` is out. It is the stable Zig release, built on Ghostty. Next comes a
 Rust rewrite (`0.2.0`) that ships the features we have today and nothing more.
 After that, `0.3.0` adds a settings UI and the behavior changes that need it.
+`0.4.0` may take on native tmux integration.
 
 ---
 
 ## 1. Executive Summary
 
+- **The idea:** a GNOME Terminal-style successor to iTerm2. See
+  [SCOPE.md](SCOPE.md) for how that guides defaults.
 - **Core Mission:** A fast, native Linux terminal with one defining opinion:
   **tabs live in a vertical sidebar on the left**, paired with first-class GNOME
   Terminal aesthetics and defaults.
@@ -23,6 +26,8 @@ After that, `0.3.0` adds a settings UI and the behavior changes that need it.
 - **0.3.0 (Settings & behavior):** A proper graphical settings UI, plus
   behavior changes that should become user options rather than hardcoded
   choices, starting with whitespace selection (see section 7).
+- **0.4.0 (maybe: native tmux integration):** iTerm2-style tmux integration.
+  Large and complex, so not committed to (see section 8).
 
 ---
 
@@ -176,6 +181,7 @@ against `term3-v0.1.0` meaningful.
 | **rust** (Branch) | Parity | Feature-for-feature match with `term3-v0.1.0` |
 | **0.2.0** *(main)* | Pure Rust release | Zig fully removed; **no new features** |
 | **0.3.0** *(main)* | Settings & behavior | Preferences window; traditional defaults (new shells in `$HOME`, whitespace selection) |
+| **0.4.0** *(maybe)* | tmux integration | Native tmux windows/panes as term3 tabs and splits |
 
 ---
 
@@ -266,3 +272,33 @@ intuitive graphical settings interface as a tier-1 feature.
 - [ ] **Hamburger Menu Integration:**
   - Direct "Preferences…" menu item (`Ctrl+,`) placed prominently in the
     primary hamburger menu.
+
+---
+
+## 8. Phase 4 (0.4.0, maybe): Native tmux Integration
+
+**Status: a maybe.** It is the iTerm2 feature most worth carrying over, but
+it is large and complex. We decide after 0.3.0 whether to commit to it.
+
+**What it means:** like iTerm2's `tmux -CC`, term3 talks to tmux in control
+mode and shows tmux windows and panes as native term3 tabs (in the sidebar)
+and splits, not as tmux's own drawn status bar and borders. Detaching and
+reattaching, including over SSH, brings the same tabs back.
+
+**Why it's big:**
+- A control-mode client: parse tmux's `%`-notification protocol, keep a model
+  of sessions, windows and panes, and send commands back.
+- Mapping tmux layouts onto term3 tabs and splits in both directions: resizes,
+  splits, closes and reorders made in term3 have to reach tmux, and changes
+  made in tmux have to show up in term3.
+- Feeding each pane's output into its own terminal, with scrollback history
+  fetched from tmux when attaching.
+- Edge cases: tmux version differences, nested sessions, slow links, and
+  attaching to a session that's already open elsewhere.
+
+**Open questions (to answer before committing):**
+- [ ] How much is achievable on the Rust codebase, and is there a reusable
+      control-mode crate or do we write our own?
+- [ ] Minimum viable version: attach and show windows as tabs only, with
+      splits later?
+- [ ] Which iTerm2 tmux behaviors do long-time users actually rely on?
