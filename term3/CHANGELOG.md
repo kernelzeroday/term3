@@ -3,6 +3,20 @@
 term3 versions follow [semver](https://semver.org); see [RELEASING.md](RELEASING.md).
 Each release notes the Ghostty version it is built on.
 
+## 0.1.0
+
+Built on Ghostty 1.4.1-dev (main at f28124c73).
+
+First stable release, promoted from 0.1.0-rc.7 with no code changes.
+0.1.0-rc.7 was never published on its own, so its fixes ship here first:
+
+### Fixed
+- **Symbols such as ⏵ (U+23F5) rendering as `?` (BUG-002).** Monochrome
+  symbol fonts like Symbola are no longer rejected as emoji-only fallbacks.
+- **"Start Maximized" windows unmaximizing off-screen (BUG-001).** The window
+  now maps at its normal size and maximizes after its first frame, so
+  unmaximize returns it to the center of the screen.
+
 ## 0.1.0-rc.7
 
 Built on Ghostty 1.4.1-dev (main at f28124c73).
