@@ -1,8 +1,8 @@
-# term3 Roadmap: 0.1.0 Release and Rust Migration
+# term3 Roadmap
 
-This document outlines the roadmap for term3: stabilizing and releasing `0.1.0`
-from the current Zig baseline, followed by launching a dedicated branch to
-replace the Zig codebase with a modern, memory-safe Rust implementation.
+`0.1.0` is out. It is the stable Zig release, built on Ghostty. Next comes a
+Rust rewrite (`0.2.0`) that ships the features we have today and nothing more.
+After that, `0.3.0` adds a settings UI and the behavior changes that need it.
 
 ---
 
@@ -11,47 +11,28 @@ replace the Zig codebase with a modern, memory-safe Rust implementation.
 - **Core Mission:** A fast, native Linux terminal with one defining opinion:
   **tabs live in a vertical sidebar on the left**, paired with first-class GNOME
   Terminal aesthetics and defaults.
-- **Immediate Milestone (0.1.0):** Complete the soak period for `0.1.0-rc.5`.
-  If no regressions or blocking bugs are encountered over the next few days,
-  tag and publish `term3-v0.1.0` as the definitive Zig-based release.
-- **Next Milestone (Rust Replatforming):** Branch from `0.1.0` to eliminate Zig
-  entirely, replacing it with an idiomatic Rust application built on
-  `gtk4-rs`, `libadwaita-rs`, and a dedicated terminal engine.
+- **0.1.0 (released):** Stable Zig-based release, tagged `term3-v0.1.0` and
+  promoted from `0.1.0-rc.7` after daily use on several machines and CPU
+  architectures (x86_64 and aarch64). Remaining rough edges are mostly upstream
+  design choices or GNOME limitations, not bugs.
+- **0.2.0 (Rust rewrite, feature-frozen):** Replace Zig entirely with an
+  idiomatic Rust application on `gtk4-rs`, `libadwaita-rs`, and a dedicated
+  terminal engine. **The 0.2.0 feature set is locked to what 0.1.0 ships.**
+  New features and behavior changes wait for 0.3.0, so `term3-v0.1.0` stays a
+  clean parity baseline.
+- **0.3.0 (Settings & behavior):** A proper graphical settings UI, plus
+  behavior changes that should become user options rather than hardcoded
+  choices, starting with whitespace selection (see section 7).
 
 ---
 
-## 2. Phase 0: Stabilization & 0.1.0 Release
+## 2. Phase 0: 0.1.0 Release (Complete)
 
-### Soak Period (Current)
-- Current candidate: `0.1.0-rc.5` (commit `d5875cebd`).
-- Verification criteria during daily-driver use:
-  - **Window Geometry:** Defaults to maximized; unmaximizing restores to large
-    browser-proportioned dimensions (1200×800) without jitter.
-  - **Sidebar Usability:** Stable tab dragging/reordering, uniform row heights,
-    title overflow (`ellipsize`, `scroll`, `wrap`), and working-directory subtitles.
-  - **Terminal Compatibility:** Private terminfo (`/usr/share/term3/terminfo`)
-    and system terminfo (`/usr/share/terminfo/x/xterm-ghostty`) function properly
-    across `sudo`, `su`, and remote SSH sessions.
-  - **Visual Defaults:** GNOME desktop monospace font auto-detection, GNOME dark
-    color palette, and block cursor.
-
-### Release Steps for 0.1.0
-1. Verify git working tree is clean and synced with remote.
-2. Update version from `0.1.0-rc.5` to `0.1.0`:
-   - `src/term3.zig` (`pub const version = "0.1.0"`)
-   - `term3/CHANGELOG.md` (finalize 0.1.0 release notes)
-3. Run test tiers:
-   ```sh
-   term3/tests/run.sh
-   ```
-4. Build release packages:
-   - Debian package (`term3/scripts/build-deb.sh`)
-   - RPM package (`term3/scripts/build-rpm.sh`)
-5. Tag and push:
-   - Tag: `term3-v0.1.0`
-   - Push commit and tag to `origin/main`
-6. Publish GitHub Release with `.deb`, `.rpm`, source tarballs, and SHA256 checksums.
-7. Mark `term3-v0.1.0` as the immutable reference baseline for parity testing.
+- Released as `term3-v0.1.0` (from `0.1.0-rc.7`, no code changes).
+- Artifacts: `.rpm` (Fedora), `.deb` (Debian/Ubuntu),
+  SRPM, source tarball, vendored Zig dependency tarball, and `SHA256SUMS`.
+- `term3-v0.1.0` is the immutable reference baseline for 0.2.0 parity testing.
+- Known limitations carried forward (not bugs): see `BUGS.md` and section 7.
 
 ---
 
@@ -111,7 +92,12 @@ will structure term3 as a native Libadwaita application with a decoupled backend
 
 ---
 
-## 5. Phase 2: Implementation Roadmap on `rust` Branch
+## 5. Phase 2 (0.2.0): Implementation Roadmap on `rust` Branch
+
+**Feature freeze:** 0.2.0 re-implements 0.1.0's features and behavior,
+including upstream behaviors we disagree with (such as whitespace selection).
+Anything new goes in section 7 (0.3.0), not here. That keeps parity testing
+against `term3-v0.1.0` meaningful.
 
 ### Milestone 1: Repository & Workspace Scaffolding
 - [ ] Create and check out branch `rust` (or `feature/rust-rewrite`) from `term3-v0.1.0`.
@@ -127,8 +113,10 @@ will structure term3 as a native Libadwaita application with a decoupled backend
 
 ### Milestone 2: Window Shell & Sidebar Widget
 - [ ] Port the window template and default geometry:
-  - Default to maximized on startup.
-  - Unmaximized restore size set to 1200×800.
+  - Match 0.1.0: `maximize` defaults to false; the "Start Maximized" menu
+    toggle persists it. A maximized window maximizes after its first frame,
+    so unmaximize restores on-screen (BUG-001).
+  - Unmaximized size matches 0.1.0 (80% of the screen, 1280×800 fallback).
 - [ ] Implement `TabSidebar` widget in Rust:
   - Vertical list of tabs bound to `AdwTabView` pages.
   - Fixed-height uniform rows.
@@ -159,7 +147,66 @@ will structure term3 as a native Libadwaita application with a decoupled backend
   - Read `org.gnome.desktop.interface monospace-font-name` via GSettings.
   - React live to system font changes without restarting.
 
-### Milestone 4: First-Class Graphical Configuration UI (`AdwPreferencesWindow`)
+### Milestone 4: Feature Parity & Test Validation
+- [ ] Run parity checks comparing `term3` (Rust) against `term3-v0.1.0` (Zig):
+  - Memory consumption and startup latency.
+  - Sidebar resize and drag behavior under stress.
+  - Shell integration, exit code handling, and process termination.
+- [ ] Automated testing suite:
+  - Unit tests for sidebar model and config parser.
+  - Headless UI tests with `xvfb-run`.
+
+### Milestone 5: Complete Zig Decommissioning
+- [ ] Remove Zig source directory `src/`, `build.zig`, `build.zig.zon`, and `.zig-*`.
+- [ ] Remove vendored Zig C libraries no longer required.
+- [ ] Update packaging scripts (`build-deb.sh`, `build-rpm.sh`) to use `cargo`.
+- [ ] Update documentation (`README.md`, `TERM3.md`, `SCOPE.md`, `HACKING.md`).
+- [ ] Merge `rust` branch into `main`.
+- [ ] Tag `term3-v0.2.0` (First Pure-Rust Release).
+
+---
+
+## 6. Milestones Summary
+
+| Version / Branch | Focus | Key Deliverables |
+| --- | --- | --- |
+| **0.1.0** *(main)* | Stable Zig release | Tagged `term3-v0.1.0`; `.deb`, `.rpm`, sources published |
+| **rust** (Branch) | Rust scaffolding | Cargo workspace, GTK4/Adw shell, PTY setup |
+| **rust** (Branch) | Sidebar port | `TabSidebar` widget with reordering, overflow, & badges |
+| **rust** (Branch) | Parity | Feature-for-feature match with `term3-v0.1.0` |
+| **0.2.0** *(main)* | Pure Rust release | Zig fully removed; **no new features** |
+| **0.3.0** *(main)* | Settings & behavior | Preferences window; whitespace selection option; other toggles |
+
+---
+
+## 7. Phase 3 (0.3.0): Settings UI & Behavior Options
+
+0.3.0 is the first release that adds features on top of the Rust codebase.
+Its theme: behavior we disagree with becomes a user-visible option, not a
+hardcoded choice.
+
+### Whitespace Selection
+
+**Current behavior (inherited from Ghostty):** selection only highlights and
+copies cells that contain text. Trailing blank cells at the end of a line,
+and empty lines, are not highlighted, so a selection looks ragged like a word
+processor's, not a rectangle of terminal cells.
+
+**Why change it:** a terminal is a grid of cells, not a document. Seeing
+exactly which cells are selected is clearer, and it matches GNOME Terminal,
+iTerm2, and most other terminals. We may come to like the current behavior,
+but so far it feels like an upstream design choice we disagree with, not a
+term3 opinion.
+
+**Plan:**
+- [ ] Add an option (for example `selection-include-whitespace = true|false`)
+      controlling whether blank cells inside a selection are highlighted.
+- [ ] Decide separately whether trailing whitespace is also *copied*, or only
+      highlighted and still trimmed on copy (most terminals trim on copy).
+- [ ] Expose it in the settings UI under Terminal Behavior.
+- [ ] Pick the default after trying both; leaning toward highlighting whitespace.
+
+### Settings UI: First-Class Graphical Configuration (`AdwPreferencesWindow`)
 
 A primary motivation for term3's user-centric design is eliminating the
 requirement to manually edit raw config files for basic preferences. Upstream
@@ -187,6 +234,7 @@ intuitive graphical settings interface as a tier-1 feature.
     - Scrollback buffer depth.
     - Bell actions: Visual bell, audible bell, and tab notification dot.
     - Copy & paste behavior (copy-on-select toggle).
+    - Selection: highlight whitespace toggle (see Whitespace Selection above).
 - [ ] **Direct Two-Way Config Synchronization:**
   - The UI reads and displays current runtime configuration.
   - Modifying controls automatically writes formatted, clean configuration
@@ -196,33 +244,3 @@ intuitive graphical settings interface as a tier-1 feature.
 - [ ] **Hamburger Menu Integration:**
   - Direct "Preferences…" menu item (`Ctrl+,`) placed prominently in the
     primary hamburger menu.
-
-### Milestone 5: Feature Parity & Test Validation
-- [ ] Run parity checks comparing `term3` (Rust) against `term3-v0.1.0` (Zig):
-  - Memory consumption and startup latency.
-  - Sidebar resize and drag behavior under stress.
-  - Shell integration, exit code handling, and process termination.
-- [ ] Automated testing suite:
-  - Unit tests for sidebar model and config parser.
-  - Headless UI tests with `xvfb-run`.
-
-### Milestone 6: Complete Zig Decommissioning
-- [ ] Remove Zig source directory `src/`, `build.zig`, `build.zig.zon`, and `.zig-*`.
-- [ ] Remove vendored Zig C libraries no longer required.
-- [ ] Update packaging scripts (`build-deb.sh`, `build-rpm.sh`) to use `cargo`.
-- [ ] Update documentation (`README.md`, `TERM3.md`, `SCOPE.md`, `HACKING.md`).
-- [ ] Merge `rust` branch into `main`.
-- [ ] Tag `term3-v0.2.0` (First Pure-Rust Release).
-
----
-
-## 6. Milestones Summary
-
-| Version / Branch | Focus | Key Deliverables |
-| --- | --- | --- |
-| **0.1.0-rc.5** *(main)* | Stabilization | Soak testing, verifying window size & terminfo fixes |
-| **0.1.0** *(main)* | Milestone Release | Final Zig release tagged; `.deb` and `.rpm` published |
-| **rust** (Branch) | Rust Scaffolding | Cargo workspace, GTK4/Adw shell, PTY setup |
-| **rust** (Branch) | Sidebar Port | `TabSidebar` widget with reordering, overflow, & badges |
-| **rust** (Branch) | Preferences UI | `AdwPreferencesWindow` for graphical settings |
-| **0.2.0** *(main)* | Pure Rust Release | Zig fully removed; Rust replaces Zig on `main` |
