@@ -175,7 +175,7 @@ against `term3-v0.1.0` meaningful.
 | **rust** (Branch) | Sidebar port | `TabSidebar` widget with reordering, overflow, & badges |
 | **rust** (Branch) | Parity | Feature-for-feature match with `term3-v0.1.0` |
 | **0.2.0** *(main)* | Pure Rust release | Zig fully removed; **no new features** |
-| **0.3.0** *(main)* | Settings & behavior | Preferences window; whitespace selection option; other toggles |
+| **0.3.0** *(main)* | Settings & behavior | Preferences window; traditional defaults (new shells in `$HOME`, whitespace selection) |
 
 ---
 
@@ -205,6 +205,28 @@ term3 opinion.
       highlighted and still trimmed on copy (most terminals trim on copy).
 - [ ] Expose it in the settings UI under Terminal Behavior.
 - [ ] Pick the default after trying both; leaning toward highlighting whitespace.
+
+### Traditional Terminal Defaults
+
+Ghostty changes several long-standing terminal conventions. term3 expects to
+restore most of them as defaults in 0.3.0, keeping Ghostty's behavior as an
+option. Each one listed here is configurable today in `~/.config/term3/config`;
+0.3.0 changes the default and exposes the setting in the settings UI.
+
+| Behavior | Ghostty default | Planned term3 default | Option |
+| --- | --- | --- | --- |
+| New window/tab/split starts in the previous terminal's directory | inherit | start in `$HOME` | `window-`, `tab-`, `split-inherit-working-directory` |
+| Selection highlights only text, not whitespace | text only | highlight cells (see above) | new option, TBD |
+
+- [ ] **TODO: start new windows, tabs and splits in `$HOME`.** Default
+      `window-inherit-working-directory`, `tab-inherit-working-directory` and
+      `split-inherit-working-directory` to `false`.
+- [ ] **TODO: highlight whitespace in selections** (see Whitespace Selection).
+- [ ] Flip each default in term3's config defaults, with a config test.
+- [ ] Add toggles to the settings UI (General page for working directory).
+- [ ] Note each changed default in the 0.3.0 changelog, so users who prefer
+      Ghostty's behavior know which line restores it.
+- [ ] Keep adding rows here as more conventions come up during daily use.
 
 ### Settings UI: First-Class Graphical Configuration (`AdwPreferencesWindow`)
 

@@ -14,8 +14,28 @@ A change is in scope only if it answers "yes" to one of these:
    releases, tests, docs?
 3. Is it a small default that makes term3 feel native on GNOME, where
    GNOME Terminal is the reference (e.g. using the desktop monospace font)?
+4. Does it restore a traditional terminal convention that Ghostty changed
+   (e.g. new shells start in `$HOME`)? See "Defaults" below.
 
 If not, it doesn't go in term3. Use upstream Ghostty, or open an issue there.
+
+## Defaults: where to look
+
+term3's users are moving from iTerm2, and they expect a terminal to behave
+like a terminal. When choosing a default:
+
+1. **Traditional terminal behavior wins** over newer "better UX" ideas.
+   Decades of muscle memory count for more than a clever default. Where
+   Ghostty changed a convention, term3 restores it and keeps Ghostty's
+   behavior as an option.
+2. **When in doubt, look at iTerm2** as configured by someone who has used it
+   for years, not iTerm2's stock defaults. The vertical tab sidebar is the
+   model: an iTerm2 idea term3 adopts on purpose.
+3. **GNOME Terminal** is the reference for the look and native desktop
+   integration (font, colors, cursor).
+4. **No cruft.** iTerm2 is inspiration, not a spec. term3 doesn't copy its
+   non-terminal extras (an embedded web browser, for example). A feature has
+   to make the terminal better at being a terminal.
 
 ## In scope
 
