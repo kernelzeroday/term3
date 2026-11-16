@@ -407,6 +407,31 @@ Open questions:
 6. Untick the menu item: GNOME's shortcuts work in term3 immediately.
 7. Restart term3: the menu item and behavior persist.
 
+
+### Maybe: let Ctrl+Alt shortcuts through to GNOME
+Not planned yet; an idea to try if losing GNOME's Ctrl+Alt+Left/Right
+workspace switching while term3 is focused turns out to hurt in daily use.
+
+- **Why it's cheap:** GNOME binds workspace switching to both
+  `<Control><Alt>Left/Right` and `<Super><Alt>Left/Right`. In term3,
+  Ctrl+Alt+Arrows is only Ghostty's default `goto_split`, and term3 already
+  binds iTerm2's Super+Alt+Arrows (Cmd+Opt+Arrows) to the same thing.
+- **The constraint:** the inhibit protocol is all or nothing; there's no way
+  to hand one combo back to Mutter or to re-send a key event to it.
+- **The idea:** in `Window.syncShortcutsInhibit`, drop the inhibit
+  (`gdk_toplevel_restore_system_shortcuts`) while Ctrl and Alt are both held,
+  and request it again when either is released or focus leaves. The arrow
+  press then reaches Mutter, which switches workspaces. Super shortcuts stay
+  captured.
+- **Side effects:** every GNOME Ctrl+Alt shortcut works inside term3
+  (Ctrl+Alt+T, Ctrl+Alt+Del, ...), arguably a plus. Any term3 Ctrl+Alt
+  keybind that GNOME also binds goes to GNOME; Ctrl+Alt+Arrows would stop
+  being `goto_split` (Super+Alt+Arrows still is).
+- **Unknowns to test:** whether re-requesting the inhibit is fast enough not
+  to miss the next Super shortcut, whether GNOME's permission dialog
+  reappears on re-request, and whether Super+Escape's "restore shortcuts"
+  interacts badly with term3 re-requesting.
+
 ---
 
 ## BUG-009: No way to see the keyboard shortcuts from the UI
