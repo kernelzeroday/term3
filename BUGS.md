@@ -258,7 +258,7 @@ windows and the others. Set `gtk-single-instance = true` to avoid that.
 - **Discovered:** 2026-11-15
 - **Environment:** All
 - **Severity:** Low / UX preference
-- **Status:** Open
+- **Status:** Fixed (unreleased).
 
 ### Description
 Opening a new tab currently inherits the working directory of the previously active tab rather than starting in the user's home directory (`~`).
@@ -266,8 +266,19 @@ Opening a new tab currently inherits the working directory of the previously act
 ### Expected Behavior
 New tabs should default to starting in the user's home directory rather than inheriting the prior tab's working directory.
 
-### Notes
-- In `src/config/Config.zig`, `tab-inherit-working-directory` currently defaults to `true`.
+### Fix
+`tab-inherit-working-directory` now defaults to `false` in
+`src/config/Config.zig`, so a new tab starts in the `working-directory`
+default, like iTerm2 and GNOME Terminal. `tab-inherit-working-directory = true`
+restores Ghostty's behavior.
+
+- **Desktop launch** (the usual case): `working-directory` resolves to home,
+  so new tabs open in `~`.
+- **Launched from a shell:** Ghostty's `working-directory` default is
+  `inherit`, i.e. the directory term3 was started in, so new tabs open there,
+  not in `~`. Set `working-directory = home` to always get `~`.
+- New windows and splits still inherit. The ROADMAP's 0.3.0 "Traditional
+  Terminal Defaults" item covers those.
 
 ---
 
@@ -364,12 +375,12 @@ Open questions:
   restore-shortcuts`) always cancels the inhibit. term3 has to re-request it
   (watch `gdk.Toplevel:shortcuts-inhibited`).
 - **When to inhibit:** always while focused, or only when the config has a
-  `super+` keybind that collides with a WM shortcut. Probably a config option
-  (default off) to start with.
+  `super+` keybind that collides with a WM shortcut. Decided: a config
+  option, on by default (always inhibit while focused).
 - **X11:** no equivalent short of a full keyboard grab; X11 stays as-is.
 
 ### Prototype
-- New config option `gtk-inhibit-system-shortcuts` (default `false`), with a
+- New config option `gtk-inhibit-system-shortcuts` (default `true`), with a
   checkable **Settings > Capture System Shortcuts** item in the hamburger menu
   (`app.toggle-inhibit-system-shortcuts`). The menu item applies the change to
   every open window right away and saves it to the config file, the same way
@@ -386,8 +397,8 @@ Open questions:
 
 ### Manual Test (GNOME Wayland)
 1. (Defaults already bind `super+left`/`super+right` to previous/next tab.)
-2. Enable Settings > Capture System Shortcuts. Mutter asks whether to allow
-   it; allow. The log shows `system shortcuts inhibited=true`.
+2. Settings > Capture System Shortcuts is on by default. Mutter asks whether
+   to allow it; allow. The log shows `system shortcuts inhibited=true`.
 3. Super+Left/Right switch tabs instead of tiling the window; Super+Up/Down
    don't maximize it.
 4. Focus another app: Super+Arrows tile it as usual. Refocus term3: they go
@@ -395,3 +406,38 @@ Open questions:
 5. Super+Escape: GNOME's shortcuts work in term3 again until it's refocused.
 6. Untick the menu item: GNOME's shortcuts work in term3 immediately.
 7. Restart term3: the menu item and behavior persist.
+
+---
+
+## BUG-009: No way to see the keyboard shortcuts from the UI
+
+- **Discovered:** 2026-11-15
+- **Environment:** All (GTK)
+- **Severity:** Low / Missing feature vs. iTerm2 and GNOME apps
+- **Status:** Fixed (unreleased); needs manual testing.
+
+### Description
+The only ways to see which keys do what were the config file and
+`term3 +list-keybinds`. GNOME apps put a Keyboard Shortcuts window in the
+main menu.
+
+### Fix
+Main menu > **Keyboard Shortcuts** (just above About, `win.shortcuts`) opens
+a dialog listing every keybind in the current config, one row per action:
+the command palette's title, the config action name (e.g. `goto_tab:3`) as
+the subtitle, and each binding as keycaps, one per line. Rows are grouped
+into Tabs, Windows, Splits, Copy and Paste, Scrolling and Selection, Search,
+Font Size, Terminal and Application, and the dialog's search filters by title.
+Leader sequences show as `Ctrl+A › C`. `ignore`/`unbind` are left out.
+
+- Data: `src/term3_shortcuts.zig` (GTK-free, unit tested:
+  `zig build test -Dtest-filter="term3: shortcuts"`).
+- Dialog: `src/apprt/gtk/shortcuts_dialog.zig`, an `Adw.PreferencesDialog`
+  (`Adw.ShortcutsDialog` needs libadwaita 1.8; term3 supports 1.7).
+- No default keybind yet (GNOME uses Ctrl+?); that needs a new core action.
+
+### Manual Test
+1. Main menu > Keyboard Shortcuts. The dialog opens with grouped rows.
+2. Search "tab": only matching rows remain.
+3. Add `keybind = ctrl+a>c=new_split:right` and reload config: reopening the
+   dialog shows `Ctrl+A › C` under Splits.

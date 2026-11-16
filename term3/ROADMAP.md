@@ -120,8 +120,8 @@ against `term3-v0.1.0` meaningful.
 
 ### Milestone 2: Window Shell & Sidebar Widget
 - [ ] Port the window template and default geometry:
-  - Match 0.1.0: `maximize` defaults to false; the "Start Maximized" menu
-    toggle persists it. A maximized window maximizes after its first frame,
+  - Match term3: `maximize` defaults to true (0.1.0 shipped false); the
+    "Start Maximized" menu toggle persists it. A maximized window maximizes after its first frame,
     so unmaximize restores on-screen (BUG-001).
   - Unmaximized size matches 0.1.0 (80% of the screen, 1280×800 fallback).
 - [ ] Implement `TabSidebar` widget in Rust:
@@ -234,7 +234,8 @@ option. Each one listed here is configurable today in `~/.config/term3/config`;
 
 - [ ] **TODO: start new windows, tabs and splits in `$HOME`.** Default
       `window-inherit-working-directory`, `tab-inherit-working-directory` and
-      `split-inherit-working-directory` to `false`.
+      `split-inherit-working-directory` to `false`. Tabs are done (BUG-004);
+      windows and splits remain.
 - [ ] **TODO: highlight whitespace in selections** (see Whitespace Selection).
 - [ ] Flip each default in term3's config defaults, with a config test.
 - [ ] Add toggles to the settings UI (General page for working directory).

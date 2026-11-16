@@ -1503,9 +1503,11 @@ link: RepeatableLink = .{},
 /// will apply to all new windows, not just the first one.
 ///
 /// Available since: 1.1.0
-// term3: start unmaximized by default with large 80% screen geometry,
-// avoiding Wayland/Mutter BUG-001 unmaximize displacement.
-maximize: bool = false,
+// term3: start maximized by default. The window still maps floating for one
+// frame first (see `maximizeAfterFirstFrame` in the GTK window), so Mutter
+// records its floating geometry and unmaximize restores it on screen
+// (BUG-001). The 80% screen size is what it restores to.
+maximize: bool = true,
 
 /// Start new windows in fullscreen. This setting applies to new windows and
 /// does not apply to tabs, splits, etc. However, this setting will apply to all
@@ -2098,9 +2100,14 @@ keybind: Keybinds = .{},
 @"window-inherit-working-directory": bool = true,
 
 /// If true, new tabs will inherit the working directory of the
-/// previously focused tab. If no tab was previously focused, the default
-/// working directory will be used (the `working-directory` option).
-@"tab-inherit-working-directory": bool = true,
+/// previously focused tab. If false, or if no tab was previously focused,
+/// the default working directory will be used (the `working-directory`
+/// option).
+///
+/// term3: defaults to `false`, so new tabs start in the default working
+/// directory (your home directory when term3 is launched from the desktop),
+/// like iTerm2 and GNOME Terminal. Set to `true` for Ghostty's behavior.
+@"tab-inherit-working-directory": bool = false,
 
 /// If true, new split panes will inherit the working directory of the
 /// previously focused split. If no split was previously focused, the default
@@ -3866,7 +3873,10 @@ else
 ///
 /// Wayland only; requires a compositor that supports the
 /// keyboard-shortcuts-inhibit protocol. Has no effect on X11. GTK only.
-@"gtk-inhibit-system-shortcuts": bool = false,
+///
+/// term3: defaults to `true`, so term3's iTerm2-style `super+` keybinds work
+/// out of the box. Set to `false` to keep the compositor's shortcuts.
+@"gtk-inhibit-system-shortcuts": bool = true,
 
 /// Determines the appearance of the top and bottom bars tab bar.
 ///
@@ -11665,6 +11675,23 @@ test "term3: sidebar option defaults" {
     try testing.expectEqual(GtkSidebarSubtitle.@"working-directory", cfg.@"gtk-sidebar-subtitle");
 }
 
+test "term3: new tabs don't inherit the working directory by default" {
+    const testing = std.testing;
+    var cfg = try Config.default(testing.allocator);
+    defer cfg.deinit();
+    try testing.expect(!cfg.@"tab-inherit-working-directory");
+    // Windows and splits keep Ghostty's behavior until 0.3.0 (ROADMAP.md).
+    try testing.expect(cfg.@"window-inherit-working-directory");
+    try testing.expect(cfg.@"split-inherit-working-directory");
+}
+
+test "term3: system shortcuts are captured by default" {
+    const testing = std.testing;
+    var cfg = try Config.default(testing.allocator);
+    defer cfg.deinit();
+    try testing.expect(cfg.@"gtk-inhibit-system-shortcuts");
+}
+
 test "term3: sidebar options parse" {
     const testing = std.testing;
     var cfg = try Config.default(testing.allocator);
@@ -11878,18 +11905,19 @@ test "term3: GNOME dark color scheme by default, like GNOME Terminal" {
     try testing.expectEqual(terminal.color.RGB{ .r = 0xFF, .g = 0x00, .b = 0x00 }, cfg.palette.value[1]);
 }
 
-test "term3: start unmaximized by default" {
+test "term3: start maximized by default" {
     const testing = std.testing;
     var cfg = try Config.default(testing.allocator);
     defer cfg.deinit();
 
-    // term3 starts unmaximized by default (avoids Mutter BUG-001)
-    try testing.expect(!cfg.maximize);
+    // term3 starts maximized by default (BUG-001 is handled by the GTK
+    // window maximizing after its first floating frame).
+    try testing.expect(cfg.maximize);
 
     // Config overrides work as expected
     var it: TestIterator = .{ .data = &.{
-        "--maximize=true",
+        "--maximize=false",
     } };
     try cfg.loadIter(testing.allocator, &it);
-    try testing.expect(cfg.maximize);
+    try testing.expect(!cfg.maximize);
 }

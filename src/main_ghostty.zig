@@ -242,6 +242,7 @@ test {
     _ = @import("cli.zig");
     _ = @import("surface_mouse.zig");
     _ = @import("term3.zig");
+    _ = @import("term3_shortcuts.zig");
 
     // Libraries
     _ = @import("tripwire.zig");

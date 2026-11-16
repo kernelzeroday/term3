@@ -32,6 +32,7 @@ const DebugWarning = @import("debug_warning.zig").DebugWarning;
 const CommandPalette = @import("command_palette.zig").CommandPalette;
 const WeakRef = @import("../weak_ref.zig").WeakRef;
 const TitleDialog = @import("title_dialog.zig").TitleDialog;
+const shortcuts_dialog = @import("../shortcuts_dialog.zig");
 const Overrides = @import("Overrides.zig");
 
 const log = std.log.scoped(.gtk_ghostty_window);
@@ -453,6 +454,7 @@ pub const Window = extern struct {
 
         const actions = [_]ext.actions.Action(Self){
             .init("about", actionAbout, null),
+            .init("shortcuts", actionShortcuts, null),
             .init("close", actionClose, null),
             .init("close-tab", actionCloseTab, s_variant_type),
             .init("new-tab", actionNewTab, null),
@@ -2226,6 +2228,16 @@ pub const Window = extern struct {
             website,
             @as(?*anyopaque, null),
         );
+    }
+
+    /// term3: show every configured keybind (main menu > Keyboard Shortcuts).
+    fn actionShortcuts(
+        _: *gio.SimpleAction,
+        _: ?*glib.Variant,
+        self: *Self,
+    ) callconv(.c) void {
+        const config = if (self.private().config) |v| v.get() else return;
+        shortcuts_dialog.present(self.as(gtk.Widget), config);
     }
 
     fn actionClose(
