@@ -1503,6 +1503,10 @@ pub const Application = extern struct {
             @intFromBool(config.@"copy-on-select" != .none),
         );
 
+        const iterm_keybinds_state = glib.Variant.newBoolean(
+            @intFromBool(config.@"iterm-keybinds"),
+        );
+
         const actions = [_]ext.actions.Action(Self){
             .init("new-window", actionNewWindow, null),
             .init("new-window-command", actionNewWindow, as_variant_type),
@@ -1530,6 +1534,12 @@ pub const Application = extern struct {
                 actionToggleCopyOnSelect,
                 null,
                 copy_on_select_state,
+            ),
+            .initStateful(
+                "toggle-iterm-keybinds",
+                actionToggleItermKeybinds,
+                null,
+                iterm_keybinds_state,
             ),
         };
 
@@ -1933,6 +1943,40 @@ pub const Application = extern struct {
         };
     }
 
+    /// term3: Settings > "iTerm2 Shortcuts". Flips `iterm-keybinds`,
+    /// saves it to the config file and reloads the config so open
+    /// terminals pick up the added or removed `super+` keybinds.
+    fn actionToggleItermKeybinds(
+        action: *gio.SimpleAction,
+        _: ?*glib.Variant,
+        self: *Self,
+    ) callconv(.c) void {
+        const state = action.as(gio.Action).getState() orelse return;
+        defer state.unref();
+        const bool_variant_type = glib.ext.VariantType.newFor(bool);
+        defer bool_variant_type.free();
+        if (state.isOfType(bool_variant_type) == 0) return;
+        const new_val = state.getBoolean() == 0;
+
+        action.setState(glib.Variant.newBoolean(@intFromBool(new_val)));
+
+        persistConfigBool(
+            self.allocator(),
+            "iterm-keybinds",
+            new_val,
+        ) catch |err| {
+            log.warn("failed to persist iterm-keybinds setting: {s}", .{@errorName(err)});
+        };
+
+        // The keybind set is built when the config is loaded, so a soft
+        // reload can't bring removed bindings back: reload from the file
+        // we just wrote. If saving failed, this resyncs the checkbox to
+        // the file's value.
+        Action.reloadConfig(self, .app, .{}) catch |err| {
+            log.warn("failed to apply iterm-keybinds setting: {s}", .{@errorName(err)});
+        };
+    }
+
     /// term3: keep the Settings menu checkboxes in sync with the config
     /// after a reload (e.g. the config file was edited by hand).
     fn syncSettingsActions(self: *Self) void {
@@ -1942,6 +1986,7 @@ pub const Application = extern struct {
             .{ "toggle-start-maximized", config.maximize },
             .{ "toggle-inhibit-system-shortcuts", config.@"gtk-inhibit-system-shortcuts" },
             .{ "toggle-copy-on-select", config.@"copy-on-select" != .none },
+            .{ "toggle-iterm-keybinds", config.@"iterm-keybinds" },
         };
         for (entries) |entry| {
             const action = action_map.lookupAction(entry[0]) orelse continue;

@@ -3878,6 +3878,18 @@ else
 /// out of the box. Set to `false` to keep the compositor's shortcuts.
 @"gtk-inhibit-system-shortcuts": bool = true,
 
+/// term3: if true, bind iTerm2's default Cmd shortcuts on `super` (for
+/// example `super+t` new tab, `super+c`/`super+v` copy and paste,
+/// `super+left`/`super+right` switch tabs, `super+1`..`super+9` go to a
+/// tab), in addition to the usual `ctrl+shift` ones. Set to `false` to drop
+/// them and leave those `super` combos to the compositor and programs.
+///
+/// Only the default bindings are removed: a `keybind` you set yourself for
+/// one of these triggers is kept unless it is identical to the default.
+/// The main menu's Settings > "iTerm2 Shortcuts" toggle switches this and
+/// saves the choice to the config file. Has no effect on macOS.
+@"iterm-keybinds": bool = true,
+
 /// Determines the appearance of the top and bottom bars tab bar.
 ///
 /// Valid values are:
@@ -5052,6 +5064,10 @@ pub fn finalize(self: *Config) !void {
     }
 
     self.@"faint-opacity" = std.math.clamp(self.@"faint-opacity", 0.0, 1.0);
+
+    // term3: iTerm2-style super keybinds are on by default; drop them
+    // if they've been turned off.
+    if (!self.@"iterm-keybinds") self.keybind.removeItermBinds(alloc);
 
     // Finalize key remapping set for efficient lookups
     self.@"key-remap".finalize();
@@ -6783,47 +6799,31 @@ pub const Keybinds = struct {
         table: []const u8,
     } = .root,
 
-    pub fn init(self: *Keybinds, alloc: Allocator) !void {
-        // We don't clear the memory because it's in the arena and unlikely
-        // to be free-able anyways (since arenas can only clear the last
-        // allocated value). This isn't a memory leak because the arena
-        // will be freed when the config is freed.
-        self.set = .{};
-        self.tables = .empty;
-        self.chain_target = .root;
+    /// term3: one of iTerm2's default shortcuts, see `itermBinds`.
+    const ItermBind = struct {
+        trigger: inputpkg.Binding.Trigger,
+        action: inputpkg.Binding.Action,
+        performable: bool = false,
+    };
 
-        // keybinds for opening and reloading config
-        try self.set.put(
-            alloc,
-            .{ .key = .{ .unicode = ',' }, .mods = inputpkg.ctrlOrSuper(.{ .shift = true }) },
-            .{ .reload_config = {} },
-        );
-        try self.set.put(
-            alloc,
-            .{ .key = .{ .unicode = ',' }, .mods = inputpkg.ctrlOrSuper(.{}) },
-            .{ .open_config = .default },
-        );
-
-        // term3: iTerm2's default Cmd shortcuts on super, in addition to
-        // the usual Linux ctrl+shift ones. Taken from iTerm2's
-        // MainMenu.xib and DefaultGlobalKeyMap.plist; iTerm2 shortcuts
-        // with no Ghostty action are left out. These are added first so that the
-        // ctrl+shift binding stays the reverse mapping for each action and
-        // is what GTK menus show. Note GNOME claims some super combos
-        // (super+arrows, super+a, super+v, ...) before term3 sees them
-        // unless `gtk-inhibit-system-shortcuts` is on.
-        if (comptime !builtin.target.os.tag.isDarwin()) {
-            const B = struct {
-                trigger: inputpkg.Binding.Trigger,
-                action: inputpkg.Binding.Action,
-                performable: bool = false,
-            };
-            const s: inputpkg.Mods = .{ .super = true };
-            const ss: inputpkg.Mods = .{ .super = true, .shift = true };
-            const sa: inputpkg.Mods = .{ .super = true, .alt = true };
-            const sc: inputpkg.Mods = .{ .super = true, .ctrl = true };
-            const sas: inputpkg.Mods = .{ .super = true, .alt = true, .shift = true };
-            const binds = [_]B{
+    /// term3: iTerm2's default Cmd shortcuts on super, in addition to
+    /// the usual Linux ctrl+shift ones. Taken from iTerm2's
+    /// MainMenu.xib and DefaultGlobalKeyMap.plist; iTerm2 shortcuts
+    /// with no Ghostty action are left out. `init` adds these first so
+    /// that the ctrl+shift binding stays the reverse mapping for each
+    /// action and is what GTK menus show. Note GNOME claims some super
+    /// combos (super+arrows, super+a, super+v, ...) before term3 sees them
+    /// unless `gtk-inhibit-system-shortcuts` is on. `iterm-keybinds = false`
+    /// removes them again in `Config.finalize`.
+    fn itermBinds() []const ItermBind {
+        const B = ItermBind;
+        const s: inputpkg.Mods = .{ .super = true };
+        const ss: inputpkg.Mods = .{ .super = true, .shift = true };
+        const sa: inputpkg.Mods = .{ .super = true, .alt = true };
+        const sc: inputpkg.Mods = .{ .super = true, .ctrl = true };
+        const sas: inputpkg.Mods = .{ .super = true, .alt = true, .shift = true };
+        const binds = comptime binds: {
+            var list: []const B = &.{
                 // Clipboard. Performable so super+c without a selection
                 // still reaches the program.
                 .{ .trigger = .{ .key = .{ .unicode = 'c' }, .mods = s }, .action = .{ .copy_to_clipboard = .mixed }, .performable = true },
@@ -6893,36 +6893,71 @@ pub const Keybinds = struct {
                 .{ .trigger = .{ .key = .{ .physical = .arrow_down }, .mods = ss }, .action = .{ .jump_to_prompt = 1 } },
                 .{ .trigger = .{ .key = .{ .unicode = 'j' }, .mods = s }, .action = .scroll_to_selection, .performable = true },
             };
-            for (binds) |b| try self.set.putFlags(
+            // super+1..8 goto tab N, super+9 last tab, like iTerm2. Both
+            // physical and unicode keys, as with the alt+N bindings.
+            for ('1'..'9') |i| {
+                const physical = @field(
+                    inputpkg.Key,
+                    std.fmt.comptimePrint("digit_{u}", .{@as(u21, i)}),
+                );
+                list = list ++ [_]B{
+                    .{ .trigger = .{ .key = .{ .physical = physical }, .mods = s }, .action = .{ .goto_tab = i - '0' } },
+                    .{ .trigger = .{ .key = .{ .unicode = i }, .mods = s }, .action = .{ .goto_tab = i - '0' } },
+                };
+            }
+            list = list ++ [_]B{
+                .{ .trigger = .{ .key = .{ .unicode = '9' }, .mods = s }, .action = .last_tab },
+            };
+            break :binds list[0..list.len].*;
+        };
+        return &binds;
+    }
+
+    /// term3: drop the default iTerm2 bindings (`iterm-keybinds = false`).
+    /// A trigger the user rebound to something else is left alone.
+    fn removeItermBinds(self: *Keybinds, alloc: Allocator) void {
+        if (comptime builtin.target.os.tag.isDarwin()) return;
+        for (itermBinds()) |b| {
+            const entry = self.set.get(b.trigger) orelse continue;
+            switch (entry.value_ptr.*) {
+                .leaf => |leaf| if (leaf.action.equal(b.action) and
+                    leaf.flags.performable == b.performable)
+                    self.set.remove(alloc, b.trigger),
+                else => {},
+            }
+        }
+    }
+
+    pub fn init(self: *Keybinds, alloc: Allocator) !void {
+        // We don't clear the memory because it's in the arena and unlikely
+        // to be free-able anyways (since arenas can only clear the last
+        // allocated value). This isn't a memory leak because the arena
+        // will be freed when the config is freed.
+        self.set = .{};
+        self.tables = .empty;
+        self.chain_target = .root;
+
+        // keybinds for opening and reloading config
+        try self.set.put(
+            alloc,
+            .{ .key = .{ .unicode = ',' }, .mods = inputpkg.ctrlOrSuper(.{ .shift = true }) },
+            .{ .reload_config = {} },
+        );
+        try self.set.put(
+            alloc,
+            .{ .key = .{ .unicode = ',' }, .mods = inputpkg.ctrlOrSuper(.{}) },
+            .{ .open_config = .default },
+        );
+
+        // term3: iTerm2's default Cmd shortcuts on super. Added first so
+        // the ctrl+shift binding stays the reverse mapping for each action
+        // and is what GTK menus show. See `itermBinds`.
+        if (comptime !builtin.target.os.tag.isDarwin()) {
+            for (itermBinds()) |b| try self.set.putFlags(
                 alloc,
                 b.trigger,
                 b.action,
                 .{ .performable = b.performable },
-            );
-
-            // super+1..8 goto tab N, super+9 last tab, like iTerm2. Both
-            // physical and unicode keys, as with the alt+N bindings below.
-            comptime var i: u21 = '1';
-            inline while (i <= '8') : (i += 1) {
-                const physical = @field(
-                    inputpkg.Key,
-                    std.fmt.comptimePrint("digit_{u}", .{i}),
-                );
-                try self.set.put(
-                    alloc,
-                    .{ .key = .{ .physical = physical }, .mods = s },
-                    .{ .goto_tab = i - '0' },
-                );
-                try self.set.put(
-                    alloc,
-                    .{ .key = .{ .unicode = i }, .mods = s },
-                    .{ .goto_tab = i - '0' },
-                );
-            }
-            try self.set.put(
-                alloc,
-                .{ .key = .{ .unicode = '9' }, .mods = s },
-                .last_tab,
             );
         }
 
@@ -11791,6 +11826,35 @@ test "term3: iTerm2-style super keybinds by default on Linux" {
     try testing.expectEqual(inputpkg.Mods{ .ctrl = true, .shift = true }, tab.mods);
     const win = set.getTrigger(.new_window).?;
     try testing.expectEqual(inputpkg.Mods{ .ctrl = true, .shift = true }, win.mods);
+}
+
+test "term3: iterm-keybinds = false drops only the default super keybinds" {
+    if (comptime builtin.target.os.tag.isDarwin()) return error.SkipZigTest;
+    const testing = std.testing;
+    var cfg = try Config.default(testing.allocator);
+    defer cfg.deinit();
+    var it: TestIterator = .{ .data = &.{
+        "--iterm-keybinds=false",
+        "--keybind=super+d=new_window",
+    } };
+    try cfg.loadIter(testing.allocator, &it);
+    try cfg.finalize();
+    try testing.expect(cfg._diagnostics.empty());
+    const set = cfg.keybind.set;
+    const s: inputpkg.Mods = .{ .super = true };
+
+    try testing.expect(set.get(.{ .key = .{ .unicode = 't' }, .mods = s }) == null);
+    try testing.expect(set.get(.{ .key = .{ .unicode = 'c' }, .mods = s }) == null);
+    try testing.expect(set.get(.{ .key = .{ .unicode = '3' }, .mods = s }) == null);
+    try testing.expect(set.get(.{ .key = .{ .physical = .arrow_left }, .mods = s }) == null);
+
+    // A user's own binding on one of those triggers stays.
+    const d = set.get(.{ .key = .{ .unicode = 'd' }, .mods = s }).?;
+    try testing.expect(d.value_ptr.*.leaf.action.equal(.new_window));
+
+    // The ctrl+shift bindings are untouched.
+    const tab = set.getTrigger(.new_tab).?;
+    try testing.expectEqual(inputpkg.Mods{ .ctrl = true, .shift = true }, tab.mods);
 }
 
 test "term3: block cursor at the prompt by default, like GNOME Terminal" {
