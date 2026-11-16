@@ -58,11 +58,18 @@ like a terminal. When choosing a default:
 | Default to large browser-proportioned window (80% screen / 1280×800) with Start Maximized UI toggle | 0.1 |
 | term3 identity: binary, app ID, config dir, icon, About | 0.1 |
 | RPM packaging, tagged releases, test suite | 0.1 |
+| Drag tabs between windows; tear off into a new window | 0.1.x |
+| iTerm2 shortcuts on `super`, with a Settings toggle | 0.1.x |
+| Capture system shortcuts so `super+` combos reach term3 | 0.1.x |
+| Keyboard Shortcuts dialog | 0.1.x |
+| Copy on select (like iTerm2), with a Settings toggle | 0.1.x |
+| New tabs start in `$HOME` | 0.1.x |
 
 ## Roadmap (in scope, not done yet)
 
 See [ROADMAP.md](ROADMAP.md) for the 0.1.0 release milestone and the upcoming
-transition to replace Zig with Rust.
+Rust rewrite (Rust app on libghostty-vt). `0.1.x` rows are on main, not yet
+released; together with the `0.1` rows they are the 0.2.0 parity baseline.
 
 Ordered roughly by priority. Each item must still pass the test above.
 

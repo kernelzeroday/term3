@@ -1,7 +1,9 @@
 # term3 Roadmap
 
 `0.1.0` is out. It is the stable Zig release, built on Ghostty. Next comes a
-Rust rewrite (`0.2.0`) that ships the features we have today and nothing more.
+Rust rewrite (`0.2.0`) that ships the features we have today and nothing more:
+the app becomes Rust, and Ghostty's terminal engine stays, used through
+libghostty-vt's C API. The rewrite has not started.
 After that, `0.3.0` adds a settings UI and the behavior changes that need it.
 `0.4.0` may take on native tmux integration.
 
@@ -18,11 +20,13 @@ After that, `0.3.0` adds a settings UI and the behavior changes that need it.
   promoted from `0.1.0-rc.7` after daily use on several machines and CPU
   architectures (x86_64 and aarch64). Remaining rough edges are mostly upstream
   design choices or GNOME limitations, not bugs.
-- **0.2.0 (Rust rewrite, feature-frozen):** Replace Zig entirely with an
-  idiomatic Rust application on `gtk4-rs`, `libadwaita-rs`, and a dedicated
-  terminal engine. **The 0.2.0 feature set is locked to what 0.1.0 ships.**
-  New features and behavior changes wait for 0.3.0, so `term3-v0.1.0` stays a
-  clean parity baseline.
+- **0.2.0 (Rust rewrite, feature-frozen):** Replace term3's Zig application
+  with an idiomatic Rust application on `gtk4-rs` and `libadwaita-rs`, keeping
+  Ghostty's terminal engine through **libghostty-vt** (C API). Zig remains
+  only as the build dependency for libghostty-vt (see section 4).
+  **The 0.2.0 feature set is locked to the parity baseline:** the last Zig
+  release, cut from main when the `rust` branch starts (section 5). New
+  features and behavior changes after that wait for 0.3.0.
 - **0.3.0 (Settings & behavior):** A proper graphical settings UI, plus
   behavior changes that should become user options rather than hardcoded
   choices, starting with whitespace selection (see section 7). Also the
@@ -38,7 +42,9 @@ After that, `0.3.0` adds a settings UI and the behavior changes that need it.
 - Released as `term3-v0.1.0` (from `0.1.0-rc.7`, no code changes).
 - Artifacts: `.rpm` (Fedora), `.deb` (Debian/Ubuntu),
   SRPM, source tarball, vendored Zig dependency tarball, and `SHA256SUMS`.
-- `term3-v0.1.0` is the immutable reference baseline for 0.2.0 parity testing.
+- `term3-v0.1.0` was the original parity baseline. It is superseded: main
+  has shipped features since (see the baseline list in section 5), so 0.2.0
+  is measured against the last Zig release instead.
 - Known limitations carried forward (not bugs): see `BUGS.md` and section 7.
 
 ---
@@ -54,8 +60,10 @@ replacing Zig with Rust provides long-term advantages:
    macros. Writing GTK widgets in Zig requires verbose manual C ABI wrapping.
 2. **Decoupling from Upstream Ghostty Churn:**
    Tracking Ghostty upstream requires tracking bleeding-edge Zig compiler
-   changes (e.g., nightly 0.17 breaking changes) and ~380k lines of complex Zig
-   internals that term3 does not need.
+   changes (e.g., nightly 0.17 breaking changes) and ~400k lines of Zig, of
+   which term3's own changes are ~3.3k. Most of it (the GTK app layer, fonts,
+   renderer, config) term3 does not need from Ghostty; the part it does need,
+   the terminal engine, is available on its own as libghostty-vt.
 3. **Ecosystem & Tooling:**
    Rust's Cargo ecosystem provides standard cross-compilation, packaging tools
    (`cargo-deb`, `cargo-generate-rpm`), memory safety, concurrency primitives,
@@ -71,8 +79,10 @@ replacing Zig with Rust provides long-term advantages:
 
 ### Architectural Choice: Standalone Rust App (`term3-rs`)
 
-Instead of maintaining a multi-megabyte C/Zig engine, the Rust implementation
-will structure term3 as a native Libadwaita application with a decoupled backend:
+term3 becomes a native Libadwaita application written in Rust. The terminal
+engine (VT parsing, screen and scrollback state, selection, search, key and
+mouse encoding) is Ghostty's, used as a library through libghostty-vt's C API
+rather than as term3 source:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -80,47 +90,113 @@ will structure term3 as a native Libadwaita application with a decoupled backend
 │  (AdwApplication / Window / Maximize & Restore Geometry) │
 ├──────────────────────────┬──────────────────────────────┤
 │    Vertical Tab Sidebar  │        Terminal View         │
-│  (GhosttyTabSidebar in   │  (PTY + VT Emulation +       │
-│   Rust / AdwTabView)     │   Text Grid & Font Shaping)  │
+│  (TabSidebar in Rust /   │  (Rust renderer, fonts,      │
+│   AdwTabView)            │   input; PTY supervisor)     │
 ├──────────────────────────┴──────────────────────────────┤
 │  Config Engine (term3 config + GSettings font monitor)  │
+├─────────────────────────────────────────────────────────┤
+│  libghostty-vt (Zig, C ABI): VT parser, screen state,   │
+│  selection, search, key/mouse encoding, render snapshot │
 └─────────────────────────────────────────────────────────┘
 ```
 
 #### Core Crates & Dependencies
 - **UI / Desktop Integration:** `gtk4` (v4.14+), `libadwaita` (v1.5+), `gio`, `glib`.
 - **PTY Management:** `portable-pty` or `nix` (forkpty, termios, signal handling).
-- **Terminal Backend Options:**
-  - *Option A (Direct VTE Integration via `vte-rs`):* Instant 100% VT parity,
-    accessibility, font fallback, IME, and low maintenance.
-  - *Option B (Pure Rust Terminal Core via `alacritty_terminal`):* GPU-accelerated
-    rendering, standalone VT grid and parser, zero C runtime dependencies.
-- **Config & IPC:** `serde`, `toml`, `zbus` (D-Bus single-instance & desktop integration).
+- **Terminal Engine (decided): libghostty-vt.** A `term3-vt-sys` crate binds
+  `include/ghostty/vt/*.h`; a safe `term3-vt` crate wraps it. This keeps
+  Ghostty's VT behavior exactly (kitty keyboard and graphics protocols,
+  `xterm-ghostty` terminfo, selection and search semantics), so parity with
+  the Zig release is about the app, not the emulator.
+  - The engine draws nothing: term3 still writes its own renderer and font
+    shaping on top of libghostty-vt's render snapshots.
+  - Its C API is young and may change; pin the libghostty-vt version.
+- **Rejected engines:**
+  - *`vte-rs` (VTE):* fastest to parity for basic use, but no kitty keyboard
+    or graphics protocol, no `xterm-ghostty`, and VTE's widget owns the
+    terminal state, which blocks moving that state into 0.3.0's session server.
+  - *`alacritty_terminal`:* pure Rust, but different VT behavior from what
+    0.1.x users have, so parity testing would mostly measure emulator
+    differences.
+- **Config:** read the existing Ghostty-style `key = value` file at
+  `~/.config/term3/config` (including `keybind = ...` syntax), not TOML.
+  Users' configs must keep working unchanged.
+- **IPC:** `zbus` (D-Bus single-instance & desktop integration).
+
+### Where Zig Remains
+
+Zig stays only to build libghostty-vt. No term3 code is written in Zig after
+0.2.0, and nothing in the Rust crates depends on Zig beyond linking the
+library.
+- Build libghostty-vt from a pinned Ghostty source in `build.rs`
+  (`zig build -Demit-lib-vt`), or link a system/prebuilt `libghostty-vt`
+  when one is available. The Zig toolchain becomes a build dependency of one
+  crate, not of the app.
+- Packaging (RPM/deb) still vendors the Zig compiler for that one step.
+- **Long term:** replace libghostty-vt with a Rust engine when one can match
+  its behavior, at which point Zig leaves the build entirely. Not scheduled;
+  the session server (0.3.0) should land first, since it fixes where the
+  engine lives.
 
 ---
 
 ## 5. Phase 2 (0.2.0): Implementation Roadmap on `rust` Branch
 
-**Feature freeze:** 0.2.0 re-implements 0.1.0's features and behavior,
-including upstream behaviors we disagree with (such as whitespace selection).
-Anything new goes in section 7 (0.3.0), not here. That keeps parity testing
-against `term3-v0.1.0` meaningful.
+**Feature freeze:** 0.2.0 re-implements the parity baseline's features and
+behavior, including upstream behaviors we disagree with (such as whitespace
+selection). Anything new goes in section 7 (0.3.0), not here.
+
+### Parity Baseline
+
+The baseline is **the last Zig release, cut from main when the `rust` branch
+starts** (tag it, for example `term3-v0.1.1`, before branching). Until then,
+features keep landing on main and are added to the list below. Everything
+here must work in 0.2.0:
+
+- **From 0.1.0:** see SCOPE.md's "In scope" table (sidebar, title overflow,
+  working-directory subtitle, GNOME font/colors/cursor, window sizing,
+  identity, packaging).
+- **Since 0.1.0:**
+  - Drag tabs between windows and tear them off into a new window (BUG-003;
+    within one process).
+  - "Capture System Shortcuts" (`gtk-inhibit-system-shortcuts`, default on):
+    Wayland keyboard-shortcuts-inhibit so `super+` combos reach term3 (BUG-008).
+  - iTerm2 default shortcuts on `super` (~77 bindings, including
+    `performable` ones that fall through to the program, e.g. `super+c`
+    with no selection), with the ctrl+shift binding still shown in menus;
+    toggle "iTerm2 Shortcuts" (`iterm-keybinds`, default on).
+  - Keyboard Shortcuts dialog listing every configured keybind, grouped and
+    searchable (BUG-009).
+  - Copy on select, default `both`; toggle "Copy on Select".
+  - New tabs start in the default working directory
+    (`tab-inherit-working-directory = false`, BUG-004).
+  - `maximize = true` by default.
+  - Settings menu: each toggle persists to the config file and applies
+    immediately; checkboxes resync after a config reload.
+- **Inherited Ghostty behavior term3 relies on** (easy to miss because it is
+  free today): the keybind engine (`performable`, chains, key tables,
+  reverse mapping for menu accelerators), splits (create, navigate, resize,
+  zoom), search, prompt jumping via shell integration, OSC 7 working
+  directory, private `xterm-ghostty` terminfo, config reload (soft and hard).
 
 ### Milestone 1: Repository & Workspace Scaffolding
-- [ ] Create and check out branch `rust` (or `feature/rust-rewrite`) from `term3-v0.1.0`.
+- [ ] Tag the parity baseline on main, then create branch `rust` (or
+      `feature/rust-rewrite`) from it.
 - [ ] Set up Cargo workspace:
   ```
   crates/
   ├── term3/           # Application binary, CLI options, D-Bus activation
   ├── term3-ui/        # GTK4/Adw window, tab sidebar widget, templates
-  ├── term3-config/    # Config file parser & GNOME GSettings font watcher
-  └── term3-pty/       # Terminal emulation / PTY process supervisor
+  ├── term3-config/    # Ghostty-format config parser & GSettings font watcher
+  ├── term3-pty/       # PTY process supervisor
+  ├── term3-vt-sys/    # libghostty-vt C bindings + build.rs (Zig build step)
+  └── term3-vt/        # Safe Rust wrapper over term3-vt-sys
   ```
 - [ ] Add `Cargo.toml`, CI workflow, and build verification (`cargo check`, `cargo test`).
 
 ### Milestone 2: Window Shell & Sidebar Widget
 - [ ] Port the window template and default geometry:
-  - Match term3: `maximize` defaults to true (0.1.0 shipped false); the
+  - Match term3: `maximize` defaults to true; the
     "Start Maximized" menu toggle persists it. A maximized window maximizes after its first frame,
     so unmaximize restores on-screen (BUG-001).
   - Unmaximized size matches 0.1.0 (80% of the screen, 1280×800 fallback).
@@ -146,6 +222,11 @@ behind an interface that doesn't assume it lives in the UI process. 0.2.0
 still runs everything in one process, but 0.3.0's session server (section 7)
 must be able to move this layer into a separate process without another
 rewrite.
+- [ ] Build and link libghostty-vt (`term3-vt-sys`); wrap terminal
+      creation, feeding PTY output, resize, key/mouse encoding, selection,
+      search and render snapshots in `term3-vt`.
+- [ ] Renderer: draw libghostty-vt render snapshots in a GTK widget (font
+      shaping, glyph cache, cursor, selection highlight).
 - [ ] Integrate PTY and terminal session supervisor:
   - PTY allocation with correct window dimensions (`winsize`).
   - Signal handling (`SIGWINCH`, `SIGHUP`, `SIGCHLD`).
@@ -161,7 +242,8 @@ rewrite.
   - React live to system font changes without restarting.
 
 ### Milestone 4: Feature Parity & Test Validation
-- [ ] Run parity checks comparing `term3` (Rust) against `term3-v0.1.0` (Zig):
+- [ ] Walk the Parity Baseline list feature by feature.
+- [ ] Run parity checks comparing `term3` (Rust) against the baseline tag (Zig):
   - Memory consumption and startup latency.
   - Sidebar resize and drag behavior under stress.
   - Shell integration, exit code handling, and process termination.
@@ -170,12 +252,14 @@ rewrite.
   - Headless UI tests with `xvfb-run`.
 
 ### Milestone 5: Complete Zig Decommissioning
-- [ ] Remove Zig source directory `src/`, `build.zig`, `build.zig.zon`, and `.zig-*`.
+- [ ] Remove term3's Zig application: `src/` (except what libghostty-vt
+      builds from, if vendored), `build.zig`, `build.zig.zon`, and `.zig-*`.
 - [ ] Remove vendored Zig C libraries no longer required.
-- [ ] Update packaging scripts (`build-deb.sh`, `build-rpm.sh`) to use `cargo`.
+- [ ] Update packaging scripts (`build-deb.sh`, `build-rpm.sh`) to use
+      `cargo`, keeping the Zig toolchain only for the libghostty-vt build.
 - [ ] Update documentation (`README.md`, `TERM3.md`, `SCOPE.md`, `HACKING.md`).
 - [ ] Merge `rust` branch into `main`.
-- [ ] Tag `term3-v0.2.0` (First Pure-Rust Release).
+- [ ] Tag `term3-v0.2.0` (first Rust release; Zig only inside libghostty-vt).
 
 ---
 
@@ -184,10 +268,11 @@ rewrite.
 | Version / Branch | Focus | Key Deliverables |
 | --- | --- | --- |
 | **0.1.0** *(main)* | Stable Zig release | Tagged `term3-v0.1.0`; `.deb`, `.rpm`, sources published |
-| **rust** (Branch) | Rust scaffolding | Cargo workspace, GTK4/Adw shell, PTY setup |
+| **0.1.x** *(main)* | Parity baseline | Last Zig release, tagged when the `rust` branch starts |
+| **rust** (Branch) | Rust scaffolding | Cargo workspace, GTK4/Adw shell, PTY setup, libghostty-vt bindings |
 | **rust** (Branch) | Sidebar port | `TabSidebar` widget with reordering, overflow, & badges |
-| **rust** (Branch) | Parity | Feature-for-feature match with `term3-v0.1.0` |
-| **0.2.0** *(main)* | Pure Rust release | Zig fully removed; **no new features** |
+| **rust** (Branch) | Parity | Feature-for-feature match with the baseline tag |
+| **0.2.0** *(main)* | Rust release | App in Rust; Zig only builds libghostty-vt; **no new features** |
 | **0.3.0** *(main)* | Settings, behavior & session server | Preferences window; traditional defaults (new shells in `$HOME`, whitespace selection); client/server sessions |
 | **0.4.0** *(maybe)* | tmux integration | Native tmux windows/panes as term3 tabs and splits |
 
