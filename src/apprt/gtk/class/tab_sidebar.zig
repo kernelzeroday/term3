@@ -28,6 +28,7 @@ const gresource = @import("../build/gresource.zig");
 const Common = @import("../class.zig").Common;
 const Surface = @import("surface.zig").Surface;
 const Tab = @import("tab.zig").Tab;
+const Window = @import("window.zig").Window;
 
 const log = std.log.scoped(.gtk_ghostty_tab_sidebar);
 
@@ -522,6 +523,13 @@ pub const TabSidebar = extern struct {
             row,
             .{},
         );
+        _ = gtk.DragSource.signals.drag_cancel.connect(
+            drag,
+            *adw.TabPage,
+            rowDragCancel,
+            page,
+            .{},
+        );
         row_widget.addController(drag.as(gtk.EventController));
 
         return row_widget;
@@ -688,6 +696,21 @@ pub const TabSidebar = extern struct {
         src.setIcon(paintable.as(gdk.Paintable), 0, 0);
     }
 
+    /// A row dropped where nothing accepts it (outside every term3 window)
+    /// tears the tab off into a new window, like `Adw.TabBar` does. A drag
+    /// cancelled with Escape snaps back as usual.
+    fn rowDragCancel(
+        src: *gtk.DragSource,
+        _: *gdk.Drag,
+        reason: gdk.DragCancelReason,
+        page: *adw.TabPage,
+    ) callconv(.c) c_int {
+        if (reason != .no_target) return 0;
+        const widget = src.as(gtk.EventController).getWidget() orelse return 0;
+        const window = ext.getAncestor(Window, widget) orelse return 0;
+        return @intFromBool(window.moveTabPageToNewWindow(page));
+    }
+
     fn listDropMotion(
         _: *gtk.DropTarget,
         _: f64,
@@ -720,17 +743,38 @@ pub const TabSidebar = extern struct {
 
         const page = gobject.ext.Value.get(value, ?*adw.TabPage) orelse return 0;
 
-        // Tabs dragged from another window's tab bar or sidebar aren't
-        // ours to reorder; ignore them.
-        if (!self.ownsPage(page)) return 0;
+        if (self.ownsPage(page)) {
+            const target: c_int = if (priv.list.getRowAtY(@intFromFloat(y))) |row|
+                row.getIndex()
+            else
+                tab_view.getNPages() - 1;
 
+            _ = tab_view.reorderPage(page, target);
+            tab_view.setSelectedPage(page);
+            return 1;
+        }
+
+        // A tab dragged from another window in this process: move it here.
+        // The PTY and surface move with it; nothing is restarted. If it was
+        // the source window's last tab, that window closes itself when its
+        // page count drops to zero.
+        const source = ext.getAncestor(
+            adw.TabView,
+            page.getChild(),
+        ) orelse return 0;
+        if (source == tab_view) return 0;
+
+        // Dropping on a row inserts before it; below the last row appends.
         const target: c_int = if (priv.list.getRowAtY(@intFromFloat(y))) |row|
             row.getIndex()
         else
-            tab_view.getNPages() - 1;
+            tab_view.getNPages();
 
-        _ = tab_view.reorderPage(page, target);
+        source.transferPage(page, tab_view, target);
         tab_view.setSelectedPage(page);
+        if (ext.getAncestor(gtk.Window, self.as(gtk.Widget))) |win| {
+            win.present();
+        }
         return 1;
     }
 

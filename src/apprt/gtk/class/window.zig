@@ -674,7 +674,13 @@ pub const Window = extern struct {
             Tab,
             surface.as(gtk.Widget),
         ) orelse return false;
-        const page = tab_view.getPage(tab.as(gtk.Widget));
+        return self.moveTabPageToNewWindow(tab_view.getPage(tab.as(gtk.Widget)));
+    }
+
+    /// Move `page`, which must belong to this window, into a new window.
+    /// Returns false (and does nothing) if it is this window's only tab.
+    pub fn moveTabPageToNewWindow(self: *Self, page: *adw.TabPage) bool {
+        const tab_view = self.private().tab_view;
 
         // Skip if this is the only tab in the existing window
         if (tab_view.getNPages() <= 1) return false;

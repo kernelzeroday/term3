@@ -207,3 +207,46 @@ fallback/filtering pipeline.
 
 3. **Combined Approach:**
    - Implement Option 1 to give built-in, zero-dependency support for `U+23F4..U+23F7`, and Option 2 to fix general Fontconfig fallback for other non-color symbol fonts.
+
+---
+
+## BUG-003: Tabs can't be dragged between windows, or torn off into a new window
+
+- **Discovered:** 2026-11-10
+- **Environment:** All (GTK sidebar, `gtk-tabs-location = left|right`)
+- **Severity:** Medium / Missing feature vs. stock Ghostty and iTerm2
+- **Status:** Fixed (unreleased); needs manual testing on GNOME Wayland and X11.
+
+### Description
+Dragging a sidebar row onto another term3 window's sidebar did nothing, and
+dropping it outside any window didn't open a new window. Stock Ghostty's
+`Adw.TabBar` does both; the sidebar that replaces it only reordered tabs.
+
+### Root Cause
+`listDrop` in `src/apprt/gtk/class/tab_sidebar.zig` deliberately rejected pages
+from other tab views ("aren't ours to reorder"), and the row's `DragSource`
+had no `drag-cancel` handler, so drops onto nothing just snapped back.
+
+### Fix
+- A drop from another window's sidebar moves the tab with
+  `Adw.TabView.transferPage`. The PTY and surface move with it and nothing
+  restarts. A source window left with no tabs closes itself (`tabViewNPages`).
+- `drag-cancel` with reason `no_target` tears the tab off into a new window
+  (`Window.moveTabPageToNewWindow`), the way `Adw.TabBar` does. Escape still
+  cancels. The only tab in a window isn't torn off.
+
+### Limitation (by design)
+This only works between windows of **one term3 process**. A tab owns a live
+PTY and renderer state, which can't move to another process; iTerm2 has the
+same limit, but it always runs as one process. With the default
+`gtk-single-instance = detect`, desktop launches share one process, but running
+`term3` from a shell starts a **separate** one, so tabs can't move between its
+windows and the others. Set `gtk-single-instance = true` to avoid that.
+
+### Manual Test
+1. Open two windows (Ctrl+Shift+N) with two or more tabs each.
+2. Drag a row from window A onto a row in window B: the tab is inserted above
+   that row, selected, and still running.
+3. Drag a row below B's last row: it's appended.
+4. Drag A's last tab to B: A closes.
+5. Drag a row onto the desktop: it opens in a new window. Esc mid-drag: snaps back.
