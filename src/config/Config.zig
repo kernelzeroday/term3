@@ -2557,11 +2557,11 @@ keybind: Keybinds = .{},
 /// `primary` on Linux and `clipboard` on macOS, and `false` is an alias for
 /// `none`.
 ///
-/// The default value is `primary` on Linux and `none` otherwise.
-@"copy-on-select": CopyOnSelect = switch (builtin.target.os.tag) {
-    .linux => .primary,
-    else => .none,
-},
+/// term3: the default value is `both`, so selecting text copies it to the
+/// system clipboard like iTerm2 (and to the selection clipboard on Linux).
+/// The main menu's Settings > "Copy on Select" toggle switches between
+/// `both` and `none` and saves the choice to the config file.
+@"copy-on-select": CopyOnSelect = .both,
 
 /// The action to take when the user right-clicks on the terminal surface.
 ///

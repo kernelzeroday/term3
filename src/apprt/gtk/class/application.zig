@@ -1274,6 +1274,9 @@ pub const Application = extern struct {
         // Sync our accelerators for menu items.
         self.syncActionAccelerators();
 
+        // term3: sync the Settings menu checkboxes.
+        self.syncSettingsActions();
+
         // Load our runtime and custom CSS. If this fails then our window is
         // just stuck with the old CSS but we don't want to fail the entire
         // config change operation.
@@ -1496,6 +1499,10 @@ pub const Application = extern struct {
             @intFromBool(config.@"gtk-inhibit-system-shortcuts"),
         );
 
+        const copy_on_select_state = glib.Variant.newBoolean(
+            @intFromBool(config.@"copy-on-select" != .none),
+        );
+
         const actions = [_]ext.actions.Action(Self){
             .init("new-window", actionNewWindow, null),
             .init("new-window-command", actionNewWindow, as_variant_type),
@@ -1517,6 +1524,12 @@ pub const Application = extern struct {
                 actionToggleInhibitSystemShortcuts,
                 null,
                 inhibit_shortcuts_state,
+            ),
+            .initStateful(
+                "toggle-copy-on-select",
+                actionToggleCopyOnSelect,
+                null,
+                copy_on_select_state,
             ),
         };
 
@@ -1885,7 +1898,63 @@ pub const Application = extern struct {
         };
     }
 
+    /// term3: Settings > "Copy on Select". Switches `copy-on-select`
+    /// between `both` (iTerm2-style: selecting copies to the clipboard)
+    /// and `none`, applies it to every open terminal, and saves it to the
+    /// config file.
+    fn actionToggleCopyOnSelect(
+        action: *gio.SimpleAction,
+        _: ?*glib.Variant,
+        self: *Self,
+    ) callconv(.c) void {
+        const state = action.as(gio.Action).getState() orelse return;
+        defer state.unref();
+        const bool_variant_type = glib.ext.VariantType.newFor(bool);
+        defer bool_variant_type.free();
+        if (state.isOfType(bool_variant_type) == 0) return;
+        const new_val = state.getBoolean() == 0;
+        const new_mode: configpkg.CopyOnSelect = if (new_val) .both else .none;
+
+        action.setState(glib.Variant.newBoolean(@intFromBool(new_val)));
+        self.private().config.getMut().@"copy-on-select" = new_mode;
+
+        persistConfigValue(
+            self.allocator(),
+            "copy-on-select",
+            @tagName(new_mode),
+        ) catch |err| {
+            log.warn("failed to persist copy-on-select setting: {s}", .{@errorName(err)});
+        };
+
+        // Surfaces keep their own copy of the config, so push the change
+        // to them with a soft reload of the (just modified) app config.
+        Action.reloadConfig(self, .app, .{ .soft = true }) catch |err| {
+            log.warn("failed to apply copy-on-select setting: {s}", .{@errorName(err)});
+        };
+    }
+
+    /// term3: keep the Settings menu checkboxes in sync with the config
+    /// after a reload (e.g. the config file was edited by hand).
+    fn syncSettingsActions(self: *Self) void {
+        const config = self.private().config.get();
+        const action_map = self.as(gio.ActionMap);
+        const entries = [_]struct { [:0]const u8, bool }{
+            .{ "toggle-start-maximized", config.maximize },
+            .{ "toggle-inhibit-system-shortcuts", config.@"gtk-inhibit-system-shortcuts" },
+            .{ "toggle-copy-on-select", config.@"copy-on-select" != .none },
+        };
+        for (entries) |entry| {
+            const action = action_map.lookupAction(entry[0]) orelse continue;
+            const simple = gobject.ext.cast(gio.SimpleAction, action) orelse continue;
+            simple.setState(glib.Variant.newBoolean(@intFromBool(entry[1])));
+        }
+    }
+
     fn persistConfigBool(alloc: Allocator, config_key: []const u8, new_val: bool) !void {
+        return persistConfigValue(alloc, config_key, if (new_val) "true" else "false");
+    }
+
+    fn persistConfigValue(alloc: Allocator, config_key: []const u8, new_val: []const u8) !void {
         const config_path = try configpkg.edit.openPath(alloc);
         defer alloc.free(config_path);
 
@@ -1900,7 +1969,7 @@ pub const Application = extern struct {
         } else try alloc.dupe(u8, "");
         defer alloc.free(existing);
 
-        const updated = try term3.setConfigBool(alloc, existing, config_key, new_val);
+        const updated = try term3.setConfigValue(alloc, existing, config_key, new_val);
         defer alloc.free(updated);
 
         var out_file = try std.Io.Dir.createFileAbsolute(

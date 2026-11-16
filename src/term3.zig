@@ -434,13 +434,20 @@ pub fn setConfigBool(
     key: []const u8,
     val: bool,
 ) ![]const u8 {
+    return setConfigValue(alloc, content, key, if (val) "true" else "false");
+}
+
+/// Like `setConfigBool`, but writes `<key> = <val>` for any value string.
+pub fn setConfigValue(
+    alloc: std.mem.Allocator,
+    content: []const u8,
+    key: []const u8,
+    val: []const u8,
+) ![]const u8 {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(alloc);
 
-    const val_str = try std.fmt.allocPrint(alloc, "{s} = {s}", .{
-        key,
-        if (val) "true" else "false",
-    });
+    const val_str = try std.fmt.allocPrint(alloc, "{s} = {s}", .{ key, val });
     defer alloc.free(val_str);
 
     var found = false;
@@ -523,4 +530,15 @@ test "term3: setConfigMaximize append if missing" {
     const res = try setConfigMaximize(alloc, input, true);
     defer alloc.free(res);
     try testing.expectEqualStrings("# Term3 config\nfont-size = 14\nmaximize = true\n", res);
+}
+
+test "term3: setConfigValue replaces and appends enum values" {
+    const alloc = testing.allocator;
+    const res = try setConfigValue(alloc, "font-size = 14\ncopy-on-select = primary\n", "copy-on-select", "none");
+    defer alloc.free(res);
+    try testing.expectEqualStrings("font-size = 14\ncopy-on-select = none\n", res);
+
+    const res2 = try setConfigValue(alloc, "font-size = 14", "copy-on-select", "both");
+    defer alloc.free(res2);
+    try testing.expectEqualStrings("font-size = 14\ncopy-on-select = both\n", res2);
 }

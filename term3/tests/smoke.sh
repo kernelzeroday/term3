@@ -38,7 +38,7 @@ for kv in "gtk-tabs-location = left" "gtk-sidebar-width = 220" \
           "background = #171421" "foreground = #d0cfcc" \
           "palette = 0=#171421" "palette = 1=#c01c28" \
           "maximize = true" "gtk-inhibit-system-shortcuts = true" \
-          "tab-inherit-working-directory = false"; do
+          "tab-inherit-working-directory = false" "copy-on-select = both"; do
   check "default: $kv" grep -qxF "$kv" <<<"$defaults"
 done
 
