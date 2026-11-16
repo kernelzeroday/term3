@@ -250,3 +250,148 @@ windows and the others. Set `gtk-single-instance = true` to avoid that.
 3. Drag a row below B's last row: it's appended.
 4. Drag A's last tab to B: A closes.
 5. Drag a row onto the desktop: it opens in a new window. Esc mid-drag: snaps back.
+
+---
+
+## BUG-004: New tabs inherit the prior tab's working directory instead of starting in user home
+
+- **Discovered:** 2026-11-15
+- **Environment:** All
+- **Severity:** Low / UX preference
+- **Status:** Open
+
+### Description
+Opening a new tab currently inherits the working directory of the previously active tab rather than starting in the user's home directory (`~`).
+
+### Expected Behavior
+New tabs should default to starting in the user's home directory rather than inheriting the prior tab's working directory.
+
+### Notes
+- In `src/config/Config.zig`, `tab-inherit-working-directory` currently defaults to `true`.
+
+---
+
+## BUG-005: Missing drag-and-drop animations and mid-flight drop indicator on left tab sidebar
+
+- **Discovered:** 2026-11-15
+- **Environment:** All (GTK sidebar, `gtk-tabs-location = left|right`)
+- **Severity:** Medium / UX degradation
+- **Status:** Open
+
+### Description
+When dragging and dropping tabs to rearrange them on the left tab sidebar, there are no drag-and-drop animations or clear mid-flight visual indicators showing where the tab will land upon release. This makes it difficult to predict the resulting tab order before letting go.
+
+### Expected Behavior
+During a drag-and-drop rearrangement on the tab sidebar, an insertion/drop-target indicator (and/or row displacement animation) should clearly show mid-flight where the dragged tab will be placed when released.
+
+---
+
+## BUG-006: Flickering when adjusting the left tab sidebar width
+
+- **Discovered:** 2026-11-15
+- **Environment:** All (GTK sidebar, `gtk-tabs-location = left|right`)
+- **Severity:** Medium / Visual glitch
+- **Status:** Open
+
+### Description
+Resizing / adjusting the width of the left tab sidebar causes visible flickering during the adjustment.
+
+### Expected Behavior
+Adjusting the left tab sidebar width should resize smoothly without flickering.
+
+---
+
+## BUG-007: Tab label is not properly centered when only the directory is displayed
+
+- **Discovered:** 2026-11-15
+- **Environment:** All (GTK sidebar, `gtk-tabs-location = left|right`)
+- **Severity:** Low / Visual polish
+- **Status:** Open
+
+### Description
+When a tab in the sidebar displays only the directory (without the program name), the text is not properly centered vertically/visually within the tab row.
+
+### Expected Behavior
+When only the directory is displayed on a tab (no program name), the label should be properly centered within the tab.
+
+---
+
+## BUG-008: Super+Arrow keybindings never reach term3 on GNOME
+
+- **Discovered:** 2026-11-15
+- **Environment:** GNOME Shell (Mutter), Wayland and X11
+- **Severity:** Medium / Missing feature vs. iTerm2 (Cmd+Arrow navigation)
+- **Status:** Prototype implemented (unreleased); needs manual testing on GNOME Wayland.
+
+### Description
+I'd like to bind `super+arrow` keys in term3 (e.g. `keybind = super+left=previous_tab`,
+or split/pane navigation), the way iTerm2 uses Cmd+Arrow. On GNOME those keys
+never reach the app: Mutter handles them first.
+
+### Why It Doesn't Work Today
+GNOME's window manager owns these combos by default:
+- `<Super>Up` / `<Super>Down`: `org.gnome.desktop.wm.keybindings maximize` / `unmaximize`
+- `<Super>Left` / `<Super>Right`: `org.gnome.mutter.keybindings toggle-tiled-left` / `toggle-tiled-right`
+- `Super` alone: `org.gnome.mutter overlay-key` (Activities overview on release)
+
+Compositor keybindings are matched before key events are sent to the focused
+client, so term3's keybind table never sees them.
+
+### Chosen Direction: Wayland keyboard-shortcuts-inhibit (passthrough)
+Freeing the keys with `gsettings` is ruled out (it's global and pushes setup
+onto users). A different default modifier is also out, since Super+Arrows is
+the point. The plan is for term3 to request passthrough itself.
+
+GTK4 exposes `zwp_keyboard_shortcuts_inhibit_v1` through
+`gdk_toplevel_inhibit_system_shortcuts()` /
+`gdk_toplevel_restore_system_shortcuts()`, and Mutter implements it (VNC/RDP
+clients and VMs use it). While it's active, Mutter forwards its own shortcuts
+to the focused window. term3 already gets the window's `gdk.Toplevel` in
+`src/apprt/gtk/class/window.zig` (around line 1169), so that's where the call
+would go.
+
+Open questions:
+- **All or nothing:** it inhibits *every* WM shortcut (Alt+Tab, Super for the
+  overview, workspace switching), not just Super+Arrows. It's scoped to the
+  focused term3 window, though, so clicking another window gets them back.
+  There's no way to hand an unbound combo back to Mutter, so this needs
+  real-use testing to see if losing Alt+Tab while term3 is focused is
+  acceptable.
+- **Permission dialog:** Mutter asks once per app ("allow term3 to inhibit
+  shortcuts?"). The answer is remembered by the permission store. If denied,
+  `shortcuts-inhibited` stays false and term3 should fall back gracefully.
+- **Escape hatch:** Super+Escape (`org.gnome.mutter.wayland.keybindings
+  restore-shortcuts`) always cancels the inhibit. term3 has to re-request it
+  (watch `gdk.Toplevel:shortcuts-inhibited`).
+- **When to inhibit:** always while focused, or only when the config has a
+  `super+` keybind that collides with a WM shortcut. Probably a config option
+  (default off) to start with.
+- **X11:** no equivalent short of a full keyboard grab; X11 stays as-is.
+
+### Prototype
+- New config option `gtk-inhibit-system-shortcuts` (default `false`), with a
+  checkable **Settings > Capture System Shortcuts** item in the hamburger menu
+  (`app.toggle-inhibit-system-shortcuts`). The menu item applies the change to
+  every open window right away and saves it to the config file, the same way
+  "Start Maximized" does (both now use `term3.setConfigBool`).
+- `Window.syncShortcutsInhibit` (`src/apprt/gtk/class/window.zig`) calls
+  `gdk_toplevel_inhibit_system_shortcuts` the first time the window is active
+  with the option on, and `gdk_toplevel_restore_system_shortcuts` when it's
+  turned off. Changes to `shortcuts-inhibited` are logged at info level.
+- iTerm2's default Cmd shortcuts are now default super keybinds on Linux,
+  taken from iTerm2's `MainMenu.xib` and `DefaultGlobalKeyMap.plist`
+  (`super+left/right` switch tabs, `super+shift+left/right` move the tab,
+  `super+up/down` scroll a line, plus `super+t/w/c/v/...`; see
+  `Keybinds.init` in `src/config/Config.zig`), so no config is needed to test.
+
+### Manual Test (GNOME Wayland)
+1. (Defaults already bind `super+left`/`super+right` to previous/next tab.)
+2. Enable Settings > Capture System Shortcuts. Mutter asks whether to allow
+   it; allow. The log shows `system shortcuts inhibited=true`.
+3. Super+Left/Right switch tabs instead of tiling the window; Super+Up/Down
+   don't maximize it.
+4. Focus another app: Super+Arrows tile it as usual. Refocus term3: they go
+   back to term3.
+5. Super+Escape: GNOME's shortcuts work in term3 again until it's refocused.
+6. Untick the menu item: GNOME's shortcuts work in term3 immediately.
+7. Restart term3: the menu item and behavior persist.

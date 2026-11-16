@@ -304,6 +304,10 @@ pub const Window = extern struct {
         /// maximize is pending. See maximizeAfterFirstFrame.
         maximize_first_tick: bool = false,
 
+        /// term3: true while we hold a system shortcuts inhibit request
+        /// on our toplevel. See syncShortcutsInhibit.
+        shortcuts_inhibit_requested: bool = false,
+
         /// See tabOverviewOpen for why we have this.
         tab_overview_focus_timer: ?c_uint = null,
 
@@ -989,6 +993,8 @@ pub const Window = extern struct {
         // Don't change urgency if we're not the active window.
         if (self.as(gtk.Window).isActive() == 0) return 0;
 
+        self.syncShortcutsInhibit();
+
         self.winproto().setUrgent(false) catch |err| {
             log.warn(
                 "winproto failed to reset urgency={}",
@@ -1313,6 +1319,49 @@ pub const Window = extern struct {
         }
 
         self.syncAppearance();
+        self.syncShortcutsInhibit();
+    }
+
+    /// term3: request or drop the system shortcuts inhibit according to
+    /// `gtk-inhibit-system-shortcuts`. While granted, the compositor sends
+    /// its own shortcuts (e.g. Super+Arrows on GNOME) to us while we're
+    /// focused instead of acting on them. The request is per toplevel and
+    /// only applies while it has keyboard focus, so we make it once; Mutter
+    /// re-applies it on every focus-in (including after Super+Escape).
+    pub fn syncShortcutsInhibit(self: *Self) void {
+        const priv = self.private();
+        const want = if (self.getConfig()) |cfg|
+            cfg.get().@"gtk-inhibit-system-shortcuts"
+        else
+            false;
+        if (want == priv.shortcuts_inhibit_requested) return;
+
+        // Wait for an active window: the request is made against our
+        // surface, which must exist, and the compositor may show a
+        // permission dialog that should appear over a focused window.
+        if (want and self.as(gtk.Window).isActive() == 0) return;
+
+        const surface = self.as(gtk.Native).getSurface() orelse return;
+        const toplevel = gobject.ext.cast(gdk.Toplevel, surface) orelse return;
+
+        if (want) {
+            toplevel.inhibitSystemShortcuts(null);
+        } else {
+            toplevel.restoreSystemShortcuts();
+        }
+        priv.shortcuts_inhibit_requested = want;
+    }
+
+    fn propShortcutsInhibited(
+        toplevel: *gdk.Toplevel,
+        _: *gobject.ParamSpec,
+        _: *Self,
+    ) callconv(.c) void {
+        var value = std.mem.zeroes(gobject.Value);
+        _ = value.init(gobject.ext.types.boolean);
+        defer value.unset();
+        toplevel.as(gobject.Object).getProperty("shortcuts-inhibited", &value);
+        log.info("system shortcuts inhibited={}", .{value.getBoolean() != 0});
     }
 
     fn propIsActive(
@@ -1635,6 +1684,13 @@ pub const Window = extern struct {
                     toplevelComputeSize,
                     self,
                     .{ .after = true },
+                );
+                _ = gobject.Object.signals.notify.connect(
+                    toplevel,
+                    *Self,
+                    propShortcutsInhibited,
+                    self,
+                    .{ .detail = "shortcuts-inhibited" },
                 );
             }
         }

@@ -422,10 +422,26 @@ test "term3: property: abbreviateHome round-trips and never grows" {
 /// If a `maximize = ...` line exists, it is replaced in place.
 /// Otherwise, `maximize = <val>\n` is appended.
 pub fn setConfigMaximize(alloc: std.mem.Allocator, content: []const u8, val: bool) ![]const u8 {
+    return setConfigBool(alloc, content, "maximize", val);
+}
+
+/// Update or set the `<key> = <val>` line in a configuration file's text
+/// content. Every existing `<key> = ...` line is replaced in place;
+/// otherwise `<key> = <val>\n` is appended.
+pub fn setConfigBool(
+    alloc: std.mem.Allocator,
+    content: []const u8,
+    key: []const u8,
+    val: bool,
+) ![]const u8 {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(alloc);
 
-    const val_str = if (val) "maximize = true" else "maximize = false";
+    const val_str = try std.fmt.allocPrint(alloc, "{s} = {s}", .{
+        key,
+        if (val) "true" else "false",
+    });
+    defer alloc.free(val_str);
 
     var found = false;
     var line_it = std.mem.splitScalar(u8, content, '\n');
@@ -437,8 +453,11 @@ pub fn setConfigMaximize(alloc: std.mem.Allocator, content: []const u8, val: boo
         is_first = false;
 
         const trimmed = std.mem.trim(u8, line, " \t\r");
-        if (std.mem.startsWith(u8, trimmed, "maximize") and
-            (trimmed.len == 8 or trimmed[8] == ' ' or trimmed[8] == '=' or trimmed[8] == '\t'))
+        if (std.mem.startsWith(u8, trimmed, key) and
+            (trimmed.len == key.len or
+                trimmed[key.len] == ' ' or
+                trimmed[key.len] == '=' or
+                trimmed[key.len] == '\t'))
         {
             try out.appendSlice(alloc, val_str);
             found = true;
@@ -483,6 +502,19 @@ test "term3: setConfigMaximize replace existing" {
     const res2 = try setConfigMaximize(alloc, res, true);
     defer alloc.free(res2);
     try testing.expectEqualStrings("# Term3 config\nfont-size = 14\nmaximize = true\ngtk-tabs-location = left\n", res2);
+}
+
+test "term3: setConfigBool other key" {
+    const alloc = testing.allocator;
+    const input = "maximize = true\ngtk-inhibit-system-shortcuts=false\n";
+    const res = try setConfigBool(alloc, input, "gtk-inhibit-system-shortcuts", true);
+    defer alloc.free(res);
+    try testing.expectEqualStrings("maximize = true\ngtk-inhibit-system-shortcuts = true\n", res);
+
+    // A key that is a prefix of another key must not match it.
+    const res2 = try setConfigBool(alloc, "gtk-inhibit-system-shortcuts-x = 1\n", "gtk-inhibit-system-shortcuts", false);
+    defer alloc.free(res2);
+    try testing.expectEqualStrings("gtk-inhibit-system-shortcuts-x = 1\ngtk-inhibit-system-shortcuts = false\n", res2);
 }
 
 test "term3: setConfigMaximize append if missing" {

@@ -3851,6 +3851,23 @@ else
 /// Available since: 1.1.0
 @"gtk-titlebar-hide-when-maximized": bool = false,
 
+/// If true, ask the compositor to send its own keyboard shortcuts to term3
+/// while a term3 window is focused, so they can be used as keybinds. For
+/// example, on GNOME this lets `super+left`, `super+right`, `super+up` and
+/// `super+down` reach term3 instead of tiling or maximizing the window.
+///
+/// This applies to *all* compositor shortcuts, not just the ones term3
+/// binds: while a term3 window is focused, shortcuts such as `alt+tab` and
+/// `super` (Activities) stop working too. Focusing another window restores
+/// them for that window.
+///
+/// On GNOME, the first request shows a dialog asking whether to allow it.
+/// `super+escape` cancels the inhibit until the window is focused again.
+///
+/// Wayland only; requires a compositor that supports the
+/// keyboard-shortcuts-inhibit protocol. Has no effect on X11. GTK only.
+@"gtk-inhibit-system-shortcuts": bool = false,
+
 /// Determines the appearance of the top and bottom bars tab bar.
 ///
 /// Valid values are:
@@ -6776,6 +6793,128 @@ pub const Keybinds = struct {
             .{ .key = .{ .unicode = ',' }, .mods = inputpkg.ctrlOrSuper(.{}) },
             .{ .open_config = .default },
         );
+
+        // term3: iTerm2's default Cmd shortcuts on super, in addition to
+        // the usual Linux ctrl+shift ones. Taken from iTerm2's
+        // MainMenu.xib and DefaultGlobalKeyMap.plist; iTerm2 shortcuts
+        // with no Ghostty action are left out. These are added first so that the
+        // ctrl+shift binding stays the reverse mapping for each action and
+        // is what GTK menus show. Note GNOME claims some super combos
+        // (super+arrows, super+a, super+v, ...) before term3 sees them
+        // unless `gtk-inhibit-system-shortcuts` is on.
+        if (comptime !builtin.target.os.tag.isDarwin()) {
+            const B = struct {
+                trigger: inputpkg.Binding.Trigger,
+                action: inputpkg.Binding.Action,
+                performable: bool = false,
+            };
+            const s: inputpkg.Mods = .{ .super = true };
+            const ss: inputpkg.Mods = .{ .super = true, .shift = true };
+            const sa: inputpkg.Mods = .{ .super = true, .alt = true };
+            const sc: inputpkg.Mods = .{ .super = true, .ctrl = true };
+            const sas: inputpkg.Mods = .{ .super = true, .alt = true, .shift = true };
+            const binds = [_]B{
+                // Clipboard. Performable so super+c without a selection
+                // still reaches the program.
+                .{ .trigger = .{ .key = .{ .unicode = 'c' }, .mods = s }, .action = .{ .copy_to_clipboard = .mixed }, .performable = true },
+                .{ .trigger = .{ .key = .{ .unicode = 'v' }, .mods = s }, .action = .paste_from_clipboard, .performable = true },
+                .{ .trigger = .{ .key = .{ .unicode = 'v' }, .mods = ss }, .action = .paste_from_selection },
+                .{ .trigger = .{ .key = .{ .unicode = 'a' }, .mods = s }, .action = .select_all },
+                .{ .trigger = .{ .key = .{ .unicode = 'k' }, .mods = s }, .action = .clear_screen, .performable = true },
+
+                // Windows and tabs
+                .{ .trigger = .{ .key = .{ .unicode = 'n' }, .mods = s }, .action = .new_window },
+                .{ .trigger = .{ .key = .{ .unicode = 't' }, .mods = s }, .action = .new_tab },
+                .{ .trigger = .{ .key = .{ .unicode = 'w' }, .mods = s }, .action = .close_surface },
+                .{ .trigger = .{ .key = .{ .unicode = 'w' }, .mods = sa }, .action = .{ .close_tab = .this } },
+                .{ .trigger = .{ .key = .{ .unicode = 'w' }, .mods = ss }, .action = .close_window },
+                .{ .trigger = .{ .key = .{ .unicode = 'q' }, .mods = s }, .action = .quit },
+                .{ .trigger = .{ .key = .{ .unicode = ',' }, .mods = s }, .action = .{ .open_config = .default } },
+                .{ .trigger = .{ .key = .{ .physical = .enter }, .mods = s }, .action = .toggle_fullscreen },
+                .{ .trigger = .{ .key = .{ .unicode = 'f' }, .mods = sc }, .action = .toggle_fullscreen },
+                .{ .trigger = .{ .key = .{ .unicode = 'r' }, .mods = s }, .action = .reset },
+
+                // Tab navigation: super+left/right switch tabs like iTerm2,
+                // super+shift+left/right move the current tab.
+                .{ .trigger = .{ .key = .{ .physical = .arrow_left }, .mods = s }, .action = .previous_tab },
+                .{ .trigger = .{ .key = .{ .physical = .arrow_right }, .mods = s }, .action = .next_tab },
+                .{ .trigger = .{ .key = .{ .unicode = '[' }, .mods = ss }, .action = .previous_tab },
+                .{ .trigger = .{ .key = .{ .unicode = ']' }, .mods = ss }, .action = .next_tab },
+                .{ .trigger = .{ .key = .{ .physical = .arrow_left }, .mods = ss }, .action = .{ .move_tab = -1 } },
+                .{ .trigger = .{ .key = .{ .physical = .arrow_right }, .mods = ss }, .action = .{ .move_tab = 1 } },
+                .{ .trigger = .{ .key = .{ .unicode = '[' }, .mods = sas }, .action = .{ .move_tab = -1 } },
+                .{ .trigger = .{ .key = .{ .unicode = ']' }, .mods = sas }, .action = .{ .move_tab = 1 } },
+
+                // Splits
+                .{ .trigger = .{ .key = .{ .unicode = 'd' }, .mods = s }, .action = .{ .new_split = .right } },
+                .{ .trigger = .{ .key = .{ .unicode = 'd' }, .mods = ss }, .action = .{ .new_split = .down } },
+                .{ .trigger = .{ .key = .{ .unicode = '[' }, .mods = s }, .action = .{ .goto_split = .previous } },
+                .{ .trigger = .{ .key = .{ .unicode = ']' }, .mods = s }, .action = .{ .goto_split = .next } },
+                .{ .trigger = .{ .key = .{ .physical = .arrow_up }, .mods = sa }, .action = .{ .goto_split = .up } },
+                .{ .trigger = .{ .key = .{ .physical = .arrow_down }, .mods = sa }, .action = .{ .goto_split = .down } },
+                .{ .trigger = .{ .key = .{ .physical = .arrow_left }, .mods = sa }, .action = .{ .goto_split = .left } },
+                .{ .trigger = .{ .key = .{ .physical = .arrow_right }, .mods = sa }, .action = .{ .goto_split = .right } },
+                .{ .trigger = .{ .key = .{ .physical = .arrow_up }, .mods = sc }, .action = .{ .resize_split = .{ .up, 10 } } },
+                .{ .trigger = .{ .key = .{ .physical = .arrow_down }, .mods = sc }, .action = .{ .resize_split = .{ .down, 10 } } },
+                .{ .trigger = .{ .key = .{ .physical = .arrow_left }, .mods = sc }, .action = .{ .resize_split = .{ .left, 10 } } },
+                .{ .trigger = .{ .key = .{ .physical = .arrow_right }, .mods = sc }, .action = .{ .resize_split = .{ .right, 10 } } },
+                .{ .trigger = .{ .key = .{ .physical = .enter }, .mods = ss }, .action = .toggle_split_zoom },
+
+                // Font size
+                .{ .trigger = .{ .key = .{ .unicode = '=' }, .mods = s }, .action = .{ .increase_font_size = 1 } },
+                .{ .trigger = .{ .key = .{ .unicode = '+' }, .mods = s }, .action = .{ .increase_font_size = 1 } },
+                .{ .trigger = .{ .key = .{ .unicode = '-' }, .mods = s }, .action = .{ .decrease_font_size = 1 } },
+                .{ .trigger = .{ .key = .{ .unicode = '0' }, .mods = s }, .action = .reset_font_size },
+
+                // Search
+                .{ .trigger = .{ .key = .{ .unicode = 'f' }, .mods = s }, .action = .start_search, .performable = true },
+                .{ .trigger = .{ .key = .{ .unicode = 'e' }, .mods = s }, .action = .search_selection, .performable = true },
+                .{ .trigger = .{ .key = .{ .unicode = 'g' }, .mods = s }, .action = .{ .navigate_search = .next }, .performable = true },
+                .{ .trigger = .{ .key = .{ .unicode = 'g' }, .mods = ss }, .action = .{ .navigate_search = .previous }, .performable = true },
+
+                // Scrollback and prompts (iTerm2 marks: cmd+shift+up/down)
+                .{ .trigger = .{ .key = .{ .physical = .arrow_up }, .mods = s }, .action = .{ .scroll_page_lines = -1 } },
+                .{ .trigger = .{ .key = .{ .physical = .arrow_down }, .mods = s }, .action = .{ .scroll_page_lines = 1 } },
+                .{ .trigger = .{ .key = .{ .physical = .home }, .mods = s }, .action = .scroll_to_top },
+                .{ .trigger = .{ .key = .{ .physical = .end }, .mods = s }, .action = .scroll_to_bottom },
+                .{ .trigger = .{ .key = .{ .physical = .page_up }, .mods = s }, .action = .scroll_page_up },
+                .{ .trigger = .{ .key = .{ .physical = .page_down }, .mods = s }, .action = .scroll_page_down },
+                .{ .trigger = .{ .key = .{ .physical = .arrow_up }, .mods = ss }, .action = .{ .jump_to_prompt = -1 } },
+                .{ .trigger = .{ .key = .{ .physical = .arrow_down }, .mods = ss }, .action = .{ .jump_to_prompt = 1 } },
+                .{ .trigger = .{ .key = .{ .unicode = 'j' }, .mods = s }, .action = .scroll_to_selection, .performable = true },
+            };
+            for (binds) |b| try self.set.putFlags(
+                alloc,
+                b.trigger,
+                b.action,
+                .{ .performable = b.performable },
+            );
+
+            // super+1..8 goto tab N, super+9 last tab, like iTerm2. Both
+            // physical and unicode keys, as with the alt+N bindings below.
+            comptime var i: u21 = '1';
+            inline while (i <= '8') : (i += 1) {
+                const physical = @field(
+                    inputpkg.Key,
+                    std.fmt.comptimePrint("digit_{u}", .{i}),
+                );
+                try self.set.put(
+                    alloc,
+                    .{ .key = .{ .physical = physical }, .mods = s },
+                    .{ .goto_tab = i - '0' },
+                );
+                try self.set.put(
+                    alloc,
+                    .{ .key = .{ .unicode = i }, .mods = s },
+                    .{ .goto_tab = i - '0' },
+                );
+            }
+            try self.set.put(
+                alloc,
+                .{ .key = .{ .unicode = '9' }, .mods = s },
+                .last_tab,
+            );
+        }
 
         {
             try self.set.put(
@@ -11582,6 +11721,49 @@ test "term3: property: any u32 sidebar width round-trips" {
         try testing.expect(cfg._diagnostics.empty());
         try testing.expectEqual(w, cfg.@"gtk-sidebar-width");
     }
+}
+
+test "term3: iTerm2-style super keybinds by default on Linux" {
+    if (comptime builtin.target.os.tag.isDarwin()) return error.SkipZigTest;
+    const testing = std.testing;
+    const Binding = inputpkg.Binding;
+    var cfg = try Config.default(testing.allocator);
+    defer cfg.deinit();
+    const set = cfg.keybind.set;
+    const s: inputpkg.Mods = .{ .super = true };
+    const ss: inputpkg.Mods = .{ .super = true, .shift = true };
+
+    const cases = [_]struct { Binding.Trigger, Binding.Action }{
+        .{ .{ .key = .{ .unicode = 't' }, .mods = s }, .new_tab },
+        .{ .{ .key = .{ .unicode = 'w' }, .mods = s }, .close_surface },
+        .{ .{ .key = .{ .unicode = 'c' }, .mods = s }, .{ .copy_to_clipboard = .mixed } },
+        .{ .{ .key = .{ .unicode = 'v' }, .mods = s }, .paste_from_clipboard },
+        .{ .{ .key = .{ .physical = .arrow_left }, .mods = s }, .previous_tab },
+        .{ .{ .key = .{ .physical = .arrow_right }, .mods = s }, .next_tab },
+        .{ .{ .key = .{ .physical = .arrow_left }, .mods = ss }, .{ .move_tab = -1 } },
+        .{ .{ .key = .{ .physical = .arrow_right }, .mods = ss }, .{ .move_tab = 1 } },
+        .{ .{ .key = .{ .unicode = '3' }, .mods = s }, .{ .goto_tab = 3 } },
+        .{ .{ .key = .{ .unicode = '9' }, .mods = s }, .last_tab },
+        .{ .{ .key = .{ .unicode = ']' }, .mods = .{ .super = true, .alt = true, .shift = true } }, .{ .move_tab = 1 } },
+        .{ .{ .key = .{ .physical = .arrow_up }, .mods = s }, .{ .scroll_page_lines = -1 } },
+        .{ .{ .key = .{ .unicode = 'f' }, .mods = .{ .super = true, .ctrl = true } }, .toggle_fullscreen },
+        .{ .{ .key = .{ .unicode = 'v' }, .mods = ss }, .paste_from_selection },
+        .{ .{ .key = .{ .unicode = 'r' }, .mods = s }, .reset },
+    };
+    for (cases) |tc| {
+        const entry = set.get(tc[0]) orelse return error.TestUnexpectedResult;
+        try testing.expect(entry.value_ptr.*.leaf.action.equal(tc[1]));
+    }
+
+    // super+c falls through to the program when nothing is selected.
+    const copy = set.get(.{ .key = .{ .unicode = 'c' }, .mods = s }).?;
+    try testing.expect(copy.value_ptr.*.leaf.flags.performable);
+
+    // Menus keep showing the GNOME-style ctrl+shift accelerators.
+    const tab = set.getTrigger(.new_tab).?;
+    try testing.expectEqual(inputpkg.Mods{ .ctrl = true, .shift = true }, tab.mods);
+    const win = set.getTrigger(.new_window).?;
+    try testing.expectEqual(inputpkg.Mods{ .ctrl = true, .shift = true }, win.mods);
 }
 
 test "term3: block cursor at the prompt by default, like GNOME Terminal" {

@@ -1492,6 +1492,9 @@ pub const Application = extern struct {
 
         const config = self.private().config.get();
         const start_maximized_state = glib.Variant.newBoolean(@intFromBool(config.maximize));
+        const inhibit_shortcuts_state = glib.Variant.newBoolean(
+            @intFromBool(config.@"gtk-inhibit-system-shortcuts"),
+        );
 
         const actions = [_]ext.actions.Action(Self){
             .init("new-window", actionNewWindow, null),
@@ -1508,6 +1511,12 @@ pub const Application = extern struct {
                 actionToggleStartMaximized,
                 null,
                 start_maximized_state,
+            ),
+            .initStateful(
+                "toggle-inhibit-system-shortcuts",
+                actionToggleInhibitSystemShortcuts,
+                null,
+                inhibit_shortcuts_state,
             ),
         };
 
@@ -1836,12 +1845,47 @@ pub const Application = extern struct {
         self.private().config.getMut().maximize = new_val;
 
         const alloc = self.allocator();
-        persistStartMaximized(alloc, new_val) catch |err| {
+        persistConfigBool(alloc, "maximize", new_val) catch |err| {
             log.warn("failed to persist start-maximized setting: {s}", .{@errorName(err)});
         };
     }
 
-    fn persistStartMaximized(alloc: Allocator, new_val: bool) !void {
+    /// term3: Settings > "Capture System Shortcuts". Flips
+    /// `gtk-inhibit-system-shortcuts`, applies it to every open window,
+    /// and saves it to the config file.
+    fn actionToggleInhibitSystemShortcuts(
+        action: *gio.SimpleAction,
+        _: ?*glib.Variant,
+        self: *Self,
+    ) callconv(.c) void {
+        const state = action.as(gio.Action).getState() orelse return;
+        defer state.unref();
+        const bool_variant_type = glib.ext.VariantType.newFor(bool);
+        defer bool_variant_type.free();
+        if (state.isOfType(bool_variant_type) == 0) return;
+        const new_val = state.getBoolean() == 0;
+
+        action.setState(glib.Variant.newBoolean(@intFromBool(new_val)));
+        self.private().config.getMut().@"gtk-inhibit-system-shortcuts" = new_val;
+
+        var node_: ?*glib.List = self.as(gtk.Application).getWindows();
+        while (node_) |node| : (node_ = node.f_next) {
+            const data = node.f_data orelse continue;
+            const gtk_window: *gtk.Window = @ptrCast(@alignCast(data));
+            const window = gobject.ext.cast(Window, gtk_window) orelse continue;
+            window.syncShortcutsInhibit();
+        }
+
+        persistConfigBool(
+            self.allocator(),
+            "gtk-inhibit-system-shortcuts",
+            new_val,
+        ) catch |err| {
+            log.warn("failed to persist gtk-inhibit-system-shortcuts setting: {s}", .{@errorName(err)});
+        };
+    }
+
+    fn persistConfigBool(alloc: Allocator, config_key: []const u8, new_val: bool) !void {
         const config_path = try configpkg.edit.openPath(alloc);
         defer alloc.free(config_path);
 
@@ -1856,7 +1900,7 @@ pub const Application = extern struct {
         } else try alloc.dupe(u8, "");
         defer alloc.free(existing);
 
-        const updated = try term3.setConfigMaximize(alloc, existing, new_val);
+        const updated = try term3.setConfigBool(alloc, existing, config_key, new_val);
         defer alloc.free(updated);
 
         var out_file = try std.Io.Dir.createFileAbsolute(
