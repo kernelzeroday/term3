@@ -27,6 +27,7 @@ const xev = global.xev;
 const Binding = @import("../../../input.zig").Binding;
 const CoreConfig = configpkg.Config;
 const term3 = @import("../../../term3.zig");
+const term3_symbols_font = @import("../term3_symbols_font.zig");
 const term3_system_font = @import("../term3_system_font.zig");
 const CoreSurface = @import("../../../Surface.zig");
 
@@ -280,6 +281,9 @@ pub const Application = extern struct {
         // term3: default to the desktop's monospace font (see
         // term3_system_font.zig); must happen before config is created.
         term3_system_font.refresh();
+
+        // term3: let GTK labels draw Nerd Font icons in tab titles.
+        term3_symbols_font.register();
 
         // Load our configuration.
         var config = CoreConfig.load(alloc) catch |err| err: {
