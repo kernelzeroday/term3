@@ -3863,13 +3863,15 @@ else
 /// example, on GNOME this lets `super+left`, `super+right`, `super+up` and
 /// `super+down` reach term3 instead of tiling or maximizing the window.
 ///
-/// This applies to *all* compositor shortcuts, not just the ones term3
-/// binds: while a term3 window is focused, shortcuts such as `alt+tab` and
-/// `super` (Activities) stop working too. Focusing another window restores
-/// them for that window.
+/// term3 only asks while `super` is held down in a focused term3 window,
+/// so every other compositor shortcut keeps working: media and brightness
+/// keys, `ctrl+alt+arrows` workspace switching, `alt+tab`, and tapping
+/// `super` for Activities. While `super` is held, *all* compositor `super`
+/// shortcuts go to term3, including ones term3 doesn't bind (e.g.
+/// `super+a`).
 ///
 /// On GNOME, the first request shows a dialog asking whether to allow it.
-/// `super+escape` cancels the inhibit until the window is focused again.
+/// `super+escape` cancels the inhibit until the next `super` press.
 ///
 /// Wayland only; requires a compositor that supports the
 /// keyboard-shortcuts-inhibit protocol. Has no effect on X11. GTK only.

@@ -309,6 +309,10 @@ pub const Window = extern struct {
         /// on our toplevel. See syncShortcutsInhibit.
         shortcuts_inhibit_requested: bool = false,
 
+        /// term3: the seat's keyboard, watched for Super being held. We
+        /// hold a ref and a notify::modifier-state handler (data = self).
+        keyboard: ?*gdk.Device = null,
+
         /// See tabOverviewOpen for why we have this.
         tab_overview_focus_timer: ?c_uint = null,
 
@@ -992,10 +996,11 @@ pub const Window = extern struct {
             }
         }
 
+        // Drops the inhibit when we go inactive.
+        self.syncShortcutsInhibit();
+
         // Don't change urgency if we're not the active window.
         if (self.as(gtk.Window).isActive() == 0) return 0;
-
-        self.syncShortcutsInhibit();
 
         self.winproto().setUrgent(false) catch |err| {
             log.warn(
@@ -1327,31 +1332,47 @@ pub const Window = extern struct {
     /// term3: request or drop the system shortcuts inhibit according to
     /// `gtk-inhibit-system-shortcuts`. While granted, the compositor sends
     /// its own shortcuts (e.g. Super+Arrows on GNOME) to us while we're
-    /// focused instead of acting on them. The request is per toplevel and
-    /// only applies while it has keyboard focus, so we make it once; Mutter
-    /// re-applies it on every focus-in (including after Super+Escape).
+    /// focused instead of acting on them.
+    ///
+    /// The inhibit is all or nothing, so we only hold it while Super is
+    /// held down in an active window. Everything else (media and
+    /// brightness keys, Ctrl+Alt+Arrows workspace switching, Alt+Tab)
+    /// reaches the compositor as usual. The compositor still sees the
+    /// Super press itself (it isn't inhibited yet), so tapping Super
+    /// still opens the Activities overview: Mutter keeps handling the
+    /// overlay key's release once it saw it pressed alone.
     pub fn syncShortcutsInhibit(self: *Self) void {
         const priv = self.private();
-        const want = if (self.getConfig()) |cfg|
+        const enabled = if (self.getConfig()) |cfg|
             cfg.get().@"gtk-inhibit-system-shortcuts"
         else
             false;
+        const super_held = if (priv.keyboard) |kbd|
+            kbd.getModifierState().super_mask
+        else
+            false;
+        const want = enabled and super_held and
+            self.as(gtk.Window).isActive() != 0;
         if (want == priv.shortcuts_inhibit_requested) return;
-
-        // Wait for an active window: the request is made against our
-        // surface, which must exist, and the compositor may show a
-        // permission dialog that should appear over a focused window.
-        if (want and self.as(gtk.Window).isActive() == 0) return;
 
         const surface = self.as(gtk.Native).getSurface() orelse return;
         const toplevel = gobject.ext.cast(gdk.Toplevel, surface) orelse return;
 
+        log.debug("system shortcuts inhibit request={}", .{want});
         if (want) {
             toplevel.inhibitSystemShortcuts(null);
         } else {
             toplevel.restoreSystemShortcuts();
         }
         priv.shortcuts_inhibit_requested = want;
+    }
+
+    fn propKeyboardModifierState(
+        _: *gdk.Device,
+        _: *gobject.ParamSpec,
+        self: *Self,
+    ) callconv(.c) void {
+        self.syncShortcutsInhibit();
     }
 
     fn propShortcutsInhibited(
@@ -1613,6 +1634,20 @@ pub const Window = extern struct {
 
         priv.command_palette.deinit();
 
+        if (priv.keyboard) |kbd| {
+            _ = gobject.signalHandlersDisconnectMatched(
+                kbd.as(gobject.Object),
+                .{ .data = true },
+                0,
+                0,
+                null,
+                null,
+                self,
+            );
+            kbd.as(gobject.Object).unref();
+            priv.keyboard = null;
+        }
+
         if (priv.config) |v| {
             v.unref();
             priv.config = null;
@@ -1694,6 +1729,25 @@ pub const Window = extern struct {
                     self,
                     .{ .detail = "shortcuts-inhibited" },
                 );
+            }
+        }
+
+        // term3: watch for Super so syncShortcutsInhibit can hold the
+        // inhibit only while it's down.
+        if (self.private().keyboard == null) {
+            const display = self.as(gtk.Widget).getDisplay();
+            if (display.getDefaultSeat()) |seat| {
+                if (seat.getKeyboard()) |kbd| {
+                    _ = kbd.as(gobject.Object).ref();
+                    self.private().keyboard = kbd;
+                    _ = gobject.Object.signals.notify.connect(
+                        kbd,
+                        *Self,
+                        propKeyboardModifierState,
+                        self,
+                        .{ .detail = "modifier-state" },
+                    );
+                }
             }
         }
 
