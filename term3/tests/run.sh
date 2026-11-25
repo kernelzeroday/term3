@@ -2,13 +2,14 @@
 # Run every term3 test tier. Exit status is non-zero if any tier fails;
 # tiers whose tools aren't installed are reported as skipped.
 #
-#   term3/tests/run.sh            unit + property + config + smoke + gui
+#   term3/tests/run.sh            unit + property + config + smoke + gui + gnome
 #   term3/tests/run.sh --all      ...plus valgrind (slow: several minutes)
 #
 # Tiers:
 #   unit      zig build test -Dtest-filter=term3   pure logic, property tests, config parsing
 #   smoke     term3/tests/smoke.sh                 CLI: version, defaults, config validation
 #   gui       term3/tests/gui.sh                   real app, headless compositor, D-Bus driven
+#   gnome     term3/tests/gnome.sh                 real app in headless GNOME Shell, real key events
 #   valgrind  term3/tests/valgrind.sh              gui tier under valgrind memcheck
 set -uo pipefail
 root="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -36,6 +37,7 @@ if command -v dbus-run-session >/dev/null && { command -v weston >/dev/null || c
 else
   echo "==== gui"; echo "SKIP: needs dbus-run-session and weston or Xvfb"; results+=("skip  gui")
 fi
+tier gnome term3/tests/gnome.sh
 if [[ "${1:-}" == "--all" ]]; then
   tier valgrind term3/tests/valgrind.sh
 fi

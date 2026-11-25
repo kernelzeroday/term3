@@ -466,3 +466,43 @@ Leader sequences show as `Ctrl+A › C`. `ignore`/`unbind` are left out.
 2. Search "tab": only matching rows remain.
 3. Add `keybind = ctrl+a>c=new_split:right` and reload config: reopening the
    dialog shows `Ctrl+A › C` under Splits.
+
+## BUG-010: A fast Super+V opens GNOME's notification list and every tab stops taking keys
+
+- **Discovered:** 2026-11-25
+- **Environment:** GNOME Shell 51 (Mutter), Wayland, `gtk-inhibit-system-shortcuts = true`
+- **Severity:** High / Looks like a hang: no tab responds to Enter, arrows or Ctrl combos
+- **Status:** Fixed by the opt-in `gtk-defuse-gnome-shortcuts` (Settings > "Defuse Clashing GNOME Shortcuts"); reproduced and covered by `term3/tests/gnome.sh`.
+
+### Description
+Paste with Super+V into a terminal (seen in Claude Code): the paste may or may
+not appear, then Enter, arrows and Ctrl combos do nothing, in every tab. Typing
+other keys or clicking around eventually brings it back.
+
+### Cause
+Since e6a361386 term3 only holds the keyboard-shortcuts inhibit while Super is
+down, and it can only request it after it has seen the Super press. When V
+follows within a few milliseconds (a fast, rolled Super+V; more often while the
+main thread is busy, e.g. with streaming output), Mutter matches Super+V before
+the inhibit exists and runs GNOME's `toggle-message-tray`. The notification
+list opens with keyboard focus on its Clear button, so every key goes to the
+shell popup instead of term3 until it closes. term3's main thread stays idle in
+`poll` throughout; nothing is hung. In the headless test a gap of 0–5 ms loses
+the race and 10 ms wins it.
+
+The race can't be closed from term3: the inhibit is all or nothing, and holding
+it whenever a window is focused (the pre-e6a361386 behaviour) swallows media,
+brightness and Ctrl+Alt+Arrow keys.
+
+### Fix
+`gtk-defuse-gnome-shortcuts` (default off, since it changes the desktop's own
+settings, see BUG-008) removes only the GNOME shortcuts that clash with term3's
+own super keybinds *and* open something that takes keyboard focus: `<Super>v`
+(notification list; `<Super>m` keeps it), `<Super>a` (app grid), `<Super>n`
+(focus notification) and `<Super><Alt>Up/Down` (overview). A combo that then
+wins the race has nothing to trigger in GNOME, so the key reaches term3 and the
+paste still happens. term3 records what it removed in
+`$XDG_STATE_HOME/term3/defused-gnome-shortcuts` and, when turned off, puts back
+only that (resetting a key to GNOME's default when that's what it adds up to).
+Other clashes (e.g. Super+Left/Right tiling) can still lose the race, but they
+only run GNOME's action and don't take the keyboard.

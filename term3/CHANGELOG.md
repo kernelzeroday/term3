@@ -3,6 +3,18 @@
 term3 versions follow [semver](https://semver.org); see [RELEASING.md](RELEASING.md).
 Each release notes the Ghostty version it is built on.
 
+## Unreleased
+
+### Added
+- **Settings > "Defuse Clashing GNOME Shortcuts" (`gtk-defuse-gnome-shortcuts`,
+  BUG-010).** Removes the GNOME shortcuts that clash with term3's super
+  keybinds and open a popup that takes the keyboard (Super+V, Super+A,
+  Super+N, Super+Alt+Up/Down), so a fast Super+V can no longer open the
+  notification list and leave every tab ignoring keys. Off by default; turning
+  it off restores exactly what it removed.
+- **GNOME test tier (`term3/tests/gnome.sh`).** Runs term3 in a headless GNOME
+  Shell with real key events, in a fully private session.
+
 ## 0.1.0
 
 Built on Ghostty 1.4.1-dev (main at f28124c73).

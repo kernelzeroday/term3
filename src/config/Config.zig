@@ -3892,6 +3892,25 @@ else
 /// saves the choice to the config file. Has no effect on macOS.
 @"iterm-keybinds": bool = true,
 
+/// term3: if true, remove the GNOME shortcuts that clash with term3's
+/// `super` keybinds and open something that takes keyboard focus:
+/// `super+v` (notification list; `super+m` still opens it), `super+a` (app
+/// grid), `super+n` (focus notification) and `super+alt+up`/`super+alt+down`
+/// (overview).
+///
+/// term3 can only ask the compositor for `super` combos once it has seen
+/// `super` go down (see `gtk-inhibit-system-shortcuts`). A fast `super+v`
+/// can reach GNOME first, which then opens the notification list: it takes
+/// the keyboard, so every term3 tab seems frozen until it is closed. With
+/// these shortcuts removed, a combo that wins that race does nothing.
+///
+/// This changes the desktop's own keyboard settings (GSettings), so it is
+/// off by default. term3 records exactly what it removed and puts back
+/// only that when this is turned off again. The main menu's Settings >
+/// "Defuse Clashing GNOME Shortcuts" toggle switches it and saves the
+/// choice to the config file. No effect outside GNOME. GTK only.
+@"gtk-defuse-gnome-shortcuts": bool = false,
+
 /// Determines the appearance of the top and bottom bars tab bar.
 ///
 /// Valid values are:
@@ -11828,6 +11847,46 @@ test "term3: iTerm2-style super keybinds by default on Linux" {
     try testing.expectEqual(inputpkg.Mods{ .ctrl = true, .shift = true }, tab.mods);
     const win = set.getTrigger(.new_window).?;
     try testing.expectEqual(inputpkg.Mods{ .ctrl = true, .shift = true }, win.mods);
+}
+
+test "term3: every defused GNOME shortcut is a default term3 super keybind" {
+    // gtk-defuse-gnome-shortcuts only removes GNOME combos that term3 binds
+    // itself; anything else would take GNOME functionality for nothing.
+    const testing = std.testing;
+    const term3 = @import("../term3.zig");
+    if (comptime builtin.target.os.tag.isDarwin()) return error.SkipZigTest;
+    for (term3.gnome_defuse_shortcuts) |s| {
+        const a = term3.parseAccel(s.accel).?;
+        const key: inputpkg.Binding.Trigger.Key = if (std.ascii.eqlIgnoreCase(a.key, "Up"))
+            .{ .physical = .arrow_up }
+        else if (std.ascii.eqlIgnoreCase(a.key, "Down"))
+            .{ .physical = .arrow_down }
+        else blk: {
+            try testing.expectEqual(@as(usize, 1), a.key.len);
+            break :blk .{ .unicode = std.ascii.toLower(a.key[0]) };
+        };
+        const mods: inputpkg.Mods = .{
+            .super = a.mods.super,
+            .shift = a.mods.shift,
+            .alt = a.mods.alt,
+            .ctrl = a.mods.ctrl,
+        };
+        var found = false;
+        for (Keybinds.itermBinds()) |b| {
+            if (b.trigger.mods.equal(mods) and std.meta.eql(b.trigger.key, key)) found = true;
+        }
+        if (!found) {
+            std.debug.print("not a term3 super keybind: {s} ({s})\n", .{ s.accel, s.key });
+            return error.TestUnexpectedResult;
+        }
+    }
+}
+
+test "term3: gtk-defuse-gnome-shortcuts defaults to off" {
+    const testing = std.testing;
+    var cfg = try Config.default(testing.allocator);
+    defer cfg.deinit();
+    try testing.expect(!cfg.@"gtk-defuse-gnome-shortcuts");
 }
 
 test "term3: iterm-keybinds = false drops only the default super keybinds" {

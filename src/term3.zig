@@ -542,3 +542,478 @@ test "term3: setConfigValue replaces and appends enum values" {
     defer alloc.free(res2);
     try testing.expectEqualStrings("font-size = 14\ncopy-on-select = both\n", res2);
 }
+
+// ---------------------------------------------------------------------------
+// Defusing GNOME shortcuts that clash with term3's super keybinds
+//
+// term3 only holds the keyboard-shortcuts inhibit while super is down (see
+// Window.syncShortcutsInhibit), and it can only ask once it has seen super
+// go down. When the next key follows within a few milliseconds, the
+// compositor handles the combo before the inhibit exists. For most combos
+// that just does GNOME's action. For the ones below it opens a shell popup
+// or mode that takes keyboard focus, so every term3 tab seems to stop
+// responding until it is closed: fast super+v opens the notification list
+// with its Clear button focused. `gtk-defuse-gnome-shortcuts` removes exactly
+// these accelerators from GNOME and puts back what it removed when turned off.
+
+/// One GNOME accelerator term3 may remove: `accel` in the `key` strv of the
+/// GSettings `schema`.
+pub const GnomeShortcut = struct {
+    schema: []const u8,
+    key: []const u8,
+    accel: []const u8,
+};
+
+/// The GNOME shortcuts that both clash with a default term3 super keybind
+/// and open something that takes keyboard focus. Keep in sync with
+/// `itermBinds` in Config.zig (a test there checks every entry is bound).
+pub const gnome_defuse_shortcuts = [_]GnomeShortcut{
+    // Notification list. GNOME keeps super+m for it.
+    .{ .schema = "org.gnome.shell.keybindings", .key = "toggle-message-tray", .accel = "<Super>v" },
+    // App grid (overview, whose search entry takes typing).
+    .{ .schema = "org.gnome.shell.keybindings", .key = "toggle-application-view", .accel = "<Super>a" },
+    // Focuses the newest notification.
+    .{ .schema = "org.gnome.shell.keybindings", .key = "focus-active-notification", .accel = "<Super>n" },
+    // Open or move the overview (term3: goto_split up/down).
+    .{ .schema = "org.gnome.shell.keybindings", .key = "shift-overview-up", .accel = "<Super><Alt>Up" },
+    .{ .schema = "org.gnome.shell.keybindings", .key = "shift-overview-down", .accel = "<Super><Alt>Down" },
+};
+
+/// Modifiers of a GTK accelerator string (`<Super><Shift>v`).
+pub const AccelMods = packed struct(u8) {
+    shift: bool = false,
+    ctrl: bool = false,
+    alt: bool = false,
+    super: bool = false,
+    hyper: bool = false,
+    meta: bool = false,
+    _pad: u2 = 0,
+};
+
+pub const Accel = struct {
+    mods: AccelMods,
+    key: []const u8,
+};
+
+/// Parse a GTK accelerator the way GSettings keybindings spell them:
+/// `<Mod>` tokens (any case, with the usual aliases) followed by a key name.
+/// Returns null for anything else, including an empty or disabled entry.
+pub fn parseAccel(s: []const u8) ?Accel {
+    var mods: AccelMods = .{};
+    var rest = s;
+    while (rest.len > 0 and rest[0] == '<') {
+        const end = std.mem.indexOfScalar(u8, rest, '>') orelse return null;
+        const name = rest[1..end];
+        const eq = std.ascii.eqlIgnoreCase;
+        if (eq(name, "shift")) {
+            mods.shift = true;
+        } else if (eq(name, "control") or eq(name, "ctrl") or eq(name, "ctl") or eq(name, "primary")) {
+            mods.ctrl = true;
+        } else if (eq(name, "alt") or eq(name, "mod1")) {
+            mods.alt = true;
+        } else if (eq(name, "super") or eq(name, "mod4")) {
+            mods.super = true;
+        } else if (eq(name, "hyper")) {
+            mods.hyper = true;
+        } else if (eq(name, "meta")) {
+            mods.meta = true;
+        } else return null;
+        rest = rest[end + 1 ..];
+    }
+    if (rest.len == 0) return null;
+    for (rest) |c| if (c == '<' or c == '>' or c <= ' ') return null;
+    return .{ .mods = mods, .key = rest };
+}
+
+/// Whether two accelerator strings name the same key combination, so
+/// `<Mod4>V` matches `<Super>v`. Strings that don't parse never match.
+pub fn accelEqual(a: []const u8, b: []const u8) bool {
+    const pa = parseAccel(a) orelse return false;
+    const pb = parseAccel(b) orelse return false;
+    return pa.mods == pb.mods and std.ascii.eqlIgnoreCase(pa.key, pb.key);
+}
+
+/// The index of the entry in `list` that names the same combination as
+/// `accel`, if any.
+pub fn findAccel(list: []const []const u8, accel: []const u8) ?usize {
+    for (list, 0..) |item, i| if (accelEqual(item, accel)) return i;
+    return null;
+}
+
+/// `list` without every entry naming `accel`'s combination, or null if
+/// there was none. The result is allocated; its items borrow from `list`.
+pub fn removeAccel(
+    alloc: std.mem.Allocator,
+    list: []const []const u8,
+    accel: []const u8,
+) !?[]const []const u8 {
+    if (findAccel(list, accel) == null) return null;
+    var out: std.ArrayList([]const u8) = .empty;
+    errdefer out.deinit(alloc);
+    for (list) |item| if (!accelEqual(item, accel)) try out.append(alloc, item);
+    return try out.toOwnedSlice(alloc);
+}
+
+/// `list` with `accel` appended, or null if it already names that
+/// combination. The result is allocated; its items borrow from the inputs.
+pub fn addAccel(
+    alloc: std.mem.Allocator,
+    list: []const []const u8,
+    accel: []const u8,
+) !?[]const []const u8 {
+    if (findAccel(list, accel) != null) return null;
+    const out = try alloc.alloc([]const u8, list.len + 1);
+    @memcpy(out[0..list.len], list);
+    out[list.len] = accel;
+    return out;
+}
+
+/// Whether two accelerator lists bind the same set of combinations,
+/// ignoring order, spelling and duplicates (entries that don't parse, like
+/// GNOME's '' placeholder, are ignored too). A restore that yields GNOME's
+/// default set resets the key instead of storing a reordered copy of it.
+pub fn sameAccelSet(a: []const []const u8, b: []const []const u8) bool {
+    for (a) |x| if (parseAccel(x) != null and findAccel(b, x) == null) return false;
+    for (b) |x| if (parseAccel(x) != null and findAccel(a, x) == null) return false;
+    return true;
+}
+
+/// The record of what term3 removed, one `schema<TAB>key<TAB>accel` line
+/// per accelerator, so turning the setting off restores exactly that.
+pub fn formatDefuseState(alloc: std.mem.Allocator, removed: []const GnomeShortcut) ![]u8 {
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(alloc);
+    for (removed) |r| {
+        if (!validStateField(r.schema) or !validStateField(r.key) or !validStateField(r.accel))
+            return error.InvalidField;
+        try out.print(alloc, "{s}\t{s}\t{s}\n", .{ r.schema, r.key, r.accel });
+    }
+    return try out.toOwnedSlice(alloc);
+}
+
+fn validStateField(s: []const u8) bool {
+    if (s.len == 0) return false;
+    for (s) |c| if (c == '\t' or c == '\n' or c == '\r') return false;
+    return true;
+}
+
+/// Iterates the entries of a defuse state file. Malformed lines (from a
+/// damaged or hand-edited file) are skipped rather than restored.
+pub const DefuseStateIterator = struct {
+    lines: std.mem.SplitIterator(u8, .scalar),
+
+    pub fn init(content: []const u8) DefuseStateIterator {
+        return .{ .lines = std.mem.splitScalar(u8, content, '\n') };
+    }
+
+    pub fn next(self: *DefuseStateIterator) ?GnomeShortcut {
+        while (self.lines.next()) |raw| {
+            const line = std.mem.trimEnd(u8, raw, "\r");
+            var fields = std.mem.splitScalar(u8, line, '\t');
+            const schema = fields.next() orelse continue;
+            const key = fields.next() orelse continue;
+            const accel = fields.next() orelse continue;
+            if (fields.next() != null) continue;
+            if (schema.len == 0 or key.len == 0 or parseAccel(accel) == null) continue;
+            return .{ .schema = schema, .key = key, .accel = accel };
+        }
+        return null;
+    }
+};
+
+test "term3: parseAccel examples" {
+    const a = parseAccel("<Super>v").?;
+    try testing.expect(a.mods.super and !a.mods.shift and !a.mods.ctrl and !a.mods.alt);
+    try testing.expectEqualStrings("v", a.key);
+
+    const b = parseAccel("<Super><Alt>Up").?;
+    try testing.expect(b.mods.super and b.mods.alt);
+    try testing.expectEqualStrings("Up", b.key);
+
+    // Aliases and case.
+    try testing.expect(parseAccel("<Mod4>V").?.mods.super);
+    try testing.expect(parseAccel("<primary>c").?.mods.ctrl);
+    try testing.expect(parseAccel("<CONTROL><ctl><Ctrl>c").?.mods.ctrl);
+    try testing.expect(parseAccel("<mod1>Tab").?.mods.alt);
+    try testing.expect(parseAccel("XF86AudioMute").?.mods == AccelMods{});
+
+    // Not accelerators: empty/disabled entries, unknown or broken modifiers,
+    // a modifier with no key, stray brackets or spaces.
+    for ([_][]const u8{ "", "<Super>", "<Super", "<Bogus>v", "<Super>v>", "<Super><v", "<Super> v", "a b", "<>v" }) |s| {
+        try testing.expect(parseAccel(s) == null);
+    }
+}
+
+test "term3: accelEqual matches aliases and case, not other combos" {
+    try testing.expect(accelEqual("<Super>v", "<Super>v"));
+    try testing.expect(accelEqual("<Super>v", "<Mod4>V"));
+    try testing.expect(accelEqual("<Super><Alt>Up", "<Alt><Super>up"));
+    try testing.expect(!accelEqual("<Super>v", "<Super><Shift>v"));
+    try testing.expect(!accelEqual("<Super>v", "<Super>m"));
+    try testing.expect(!accelEqual("<Super>v", "v"));
+    try testing.expect(!accelEqual("", ""));
+    try testing.expect(!accelEqual("<Bogus>v", "<Bogus>v"));
+}
+
+test "term3: removeAccel keeps the other bindings in order" {
+    const alloc = testing.allocator;
+    const gnome_default = [_][]const u8{ "<Super>v", "<Super>m" };
+    const out = (try removeAccel(alloc, &gnome_default, "<Super>v")).?;
+    defer alloc.free(out);
+    try testing.expectEqual(@as(usize, 1), out.len);
+    try testing.expectEqualStrings("<Super>m", out[0]);
+
+    // Every spelling of the combination goes, nothing else does.
+    const messy = [_][]const u8{ "<Mod4>V", "<Super>m", "<Super>v", "" };
+    const out2 = (try removeAccel(alloc, &messy, "<Super>v")).?;
+    defer alloc.free(out2);
+    try testing.expectEqual(@as(usize, 2), out2.len);
+    try testing.expectEqualStrings("<Super>m", out2[0]);
+    try testing.expectEqualStrings("", out2[1]);
+
+    // Absent: nothing to do.
+    try testing.expect((try removeAccel(alloc, &[_][]const u8{"<Super>m"}, "<Super>v")) == null);
+    try testing.expect((try removeAccel(alloc, &[_][]const u8{}, "<Super>v")) == null);
+}
+
+test "term3: addAccel appends once" {
+    const alloc = testing.allocator;
+    const out = (try addAccel(alloc, &[_][]const u8{"<Super>m"}, "<Super>v")).?;
+    defer alloc.free(out);
+    try testing.expectEqual(@as(usize, 2), out.len);
+    try testing.expectEqualStrings("<Super>m", out[0]);
+    try testing.expectEqualStrings("<Super>v", out[1]);
+    // Already bound (in any spelling): unchanged.
+    try testing.expect((try addAccel(alloc, &[_][]const u8{ "<Super>m", "<Mod4>V" }, "<Super>v")) == null);
+}
+
+test "term3: sameAccelSet ignores order, spelling and placeholders" {
+    const L = []const []const u8;
+    try testing.expect(sameAccelSet(&[_][]const u8{ "<Super>m", "<Super>v" }, &[_][]const u8{ "<Super>v", "<Super>m" }));
+    try testing.expect(sameAccelSet(&[_][]const u8{ "<Mod4>V", "<Super>m" }, &[_][]const u8{ "<Super>m", "<Super>v", "<Super>v" }));
+    try testing.expect(sameAccelSet(&[_][]const u8{ "", "<Super>F1" }, &[_][]const u8{"<Super>F1"}));
+    try testing.expect(sameAccelSet(@as(L, &.{}), @as(L, &.{})));
+    try testing.expect(!sameAccelSet(&[_][]const u8{"<Super>m"}, &[_][]const u8{ "<Super>m", "<Super>v" }));
+    try testing.expect(!sameAccelSet(&[_][]const u8{ "<Super>m", "<Super>v" }, &[_][]const u8{"<Super>m"}));
+    try testing.expect(!sameAccelSet(&[_][]const u8{"<Super>v"}, &[_][]const u8{"<Super><Shift>v"}));
+}
+
+test "term3: property: removing then re-adding gives back the same accelerator set" {
+    const alloc = testing.allocator;
+    var p = prng(0x5a3e_5e7);
+    const r = p.random();
+    const pool = [_][]const u8{ "<Super>v", "<Super>m", "<Super>a", "<Mod4>V", "<Super><Shift>v", "", "<Alt>Tab" };
+    for (0..property_runs) |_| {
+        var buf: [6][]const u8 = undefined;
+        const n = r.uintLessThan(usize, buf.len + 1);
+        for (buf[0..n]) |*item| item.* = pool[r.uintLessThan(usize, pool.len)];
+        const list = buf[0..n];
+        const accel = pool[r.uintLessThan(usize, 4)];
+        // Only lists that bind the accelerator get it removed (and recorded).
+        const removed = (try removeAccel(alloc, list, accel)) orelse continue;
+        defer alloc.free(removed);
+        try testing.expect(!sameAccelSet(list, removed));
+        const restored = (try addAccel(alloc, removed, accel)).?;
+        defer alloc.free(restored);
+        try testing.expect(sameAccelSet(list, restored));
+    }
+}
+
+test "term3: the defuse list only names popups GNOME binds by default" {
+    for (gnome_defuse_shortcuts) |s| {
+        const a = parseAccel(s.accel).?;
+        try testing.expect(a.mods.super);
+        try testing.expectEqualStrings("org.gnome.shell.keybindings", s.schema);
+    }
+    // Super+M must stay bound to the notification list.
+    for (gnome_defuse_shortcuts) |s| try testing.expect(!accelEqual(s.accel, "<Super>m"));
+}
+
+test "term3: defuse state round-trips" {
+    const alloc = testing.allocator;
+    const removed = [_]GnomeShortcut{
+        .{ .schema = "org.gnome.shell.keybindings", .key = "toggle-message-tray", .accel = "<Super>v" },
+        .{ .schema = "org.gnome.shell.keybindings", .key = "toggle-application-view", .accel = "<Mod4>A" },
+    };
+    const text = try formatDefuseState(alloc, &removed);
+    defer alloc.free(text);
+    try testing.expectEqualStrings(
+        "org.gnome.shell.keybindings\ttoggle-message-tray\t<Super>v\n" ++
+            "org.gnome.shell.keybindings\ttoggle-application-view\t<Mod4>A\n",
+        text,
+    );
+    var it: DefuseStateIterator = .init(text);
+    for (removed) |want| {
+        const got = it.next().?;
+        try testing.expectEqualStrings(want.schema, got.schema);
+        try testing.expectEqualStrings(want.key, got.key);
+        try testing.expectEqualStrings(want.accel, got.accel);
+    }
+    try testing.expect(it.next() == null);
+
+    try testing.expectError(error.InvalidField, formatDefuseState(alloc, &[_]GnomeShortcut{
+        .{ .schema = "a\tb", .key = "k", .accel = "<Super>v" },
+    }));
+}
+
+test "term3: defuse state skips malformed lines" {
+    const text =
+        "\n" ++
+        "garbage\n" ++
+        "only\ttwo\n" ++
+        "too\tmany\t<Super>v\tfields\n" ++
+        "\tkey\t<Super>v\n" ++
+        "schema\t\t<Super>v\n" ++
+        "schema\tkey\t<Bogus>v\n" ++
+        "org.gnome.shell.keybindings\ttoggle-message-tray\t<Super>v\r\n" ++
+        "trailing-no-newline\tk\t<Super>a";
+    var it: DefuseStateIterator = .init(text);
+    const a = it.next().?;
+    try testing.expectEqualStrings("toggle-message-tray", a.key);
+    try testing.expectEqualStrings("<Super>v", a.accel);
+    const b = it.next().?;
+    try testing.expectEqualStrings("trailing-no-newline", b.schema);
+    try testing.expect(it.next() == null);
+}
+
+/// A random accelerator for `combo` with random modifier order, aliases and
+/// key case, all naming the same combination.
+fn respell(r: std.Random, buf: []u8, mods: AccelMods, key: []const u8) []const u8 {
+    const names = [_][]const []const u8{
+        &.{ "Shift", "shift", "SHIFT" },
+        &.{ "Control", "Ctrl", "ctl", "Primary", "control" },
+        &.{ "Alt", "Mod1", "alt" },
+        &.{ "Super", "Mod4", "super" },
+        &.{ "Hyper", "hyper" },
+        &.{ "Meta", "META" },
+    };
+    const on = [_]bool{ mods.shift, mods.ctrl, mods.alt, mods.super, mods.hyper, mods.meta };
+    var order = [_]usize{ 0, 1, 2, 3, 4, 5 };
+    r.shuffle(usize, &order);
+    var n: usize = 0;
+    for (order) |i| if (on[i]) {
+        const alts = names[i];
+        const name = alts[r.uintLessThan(usize, alts.len)];
+        // Sometimes repeat a modifier: GTK accepts that and it changes nothing.
+        const times: usize = if (r.uintLessThan(u8, 8) == 0) 2 else 1;
+        for (0..times) |_| {
+            buf[n] = '<';
+            @memcpy(buf[n + 1 ..][0..name.len], name);
+            buf[n + 1 + name.len] = '>';
+            n += name.len + 2;
+        }
+    };
+    for (key) |c| {
+        buf[n] = if (r.boolean()) std.ascii.toUpper(c) else std.ascii.toLower(c);
+        n += 1;
+    }
+    return buf[0..n];
+}
+
+test "term3: property: accelEqual ignores spelling and tells combos apart" {
+    var p = prng(0x7e3_def05e);
+    const r = p.random();
+    const keys = [_][]const u8{ "v", "a", "n", "m", "Up", "Down", "Tab", "space", "F1", "XF86AudioMute" };
+    var b1: [128]u8 = undefined;
+    var b2: [128]u8 = undefined;
+    for (0..property_runs) |_| {
+        const m1: AccelMods = @bitCast(r.int(u8) & 0x3f);
+        const k1 = keys[r.uintLessThan(usize, keys.len)];
+        const s1 = respell(r, &b1, m1, k1);
+        const s1b = respell(r, &b2, m1, k1);
+        // Same combination, any spelling: equal, both ways, and reflexive.
+        try testing.expect(accelEqual(s1, s1b));
+        try testing.expect(accelEqual(s1b, s1));
+        try testing.expect(accelEqual(s1, s1));
+
+        const m2: AccelMods = @bitCast(r.int(u8) & 0x3f);
+        const k2 = keys[r.uintLessThan(usize, keys.len)];
+        const s2 = respell(r, &b2, m2, k2);
+        const same = m1 == m2 and std.ascii.eqlIgnoreCase(k1, k2);
+        try testing.expectEqual(same, accelEqual(s1, s2));
+    }
+}
+
+test "term3: property: removing then adding an accelerator restores the combos" {
+    const alloc = testing.allocator;
+    var p = prng(0x5eed_acce1);
+    const r = p.random();
+    const pool = [_][]const u8{ "<Super>v", "<Super>m", "<Super>a", "<Mod4>V", "<Super><Shift>v", "", "<Alt>Tab", "XF86AudioMute" };
+    for (0..property_runs) |_| {
+        var list_buf: [6][]const u8 = undefined;
+        const n = r.uintLessThan(usize, list_buf.len + 1);
+        for (list_buf[0..n]) |*item| item.* = pool[r.uintLessThan(usize, pool.len)];
+        const list = list_buf[0..n];
+        const accel = pool[r.uintLessThan(usize, 4)];
+
+        const had = findAccel(list, accel) != null;
+        const removed = try removeAccel(alloc, list, accel);
+        defer if (removed) |x| alloc.free(x);
+        try testing.expectEqual(had, removed != null);
+
+        const after = removed orelse list;
+        // Nothing naming the combination survives; everything else does, in order.
+        try testing.expect(findAccel(after, accel) == null);
+        var j: usize = 0;
+        for (list) |item| if (!accelEqual(item, accel)) {
+            try testing.expectEqualStrings(item, after[j]);
+            j += 1;
+        };
+        try testing.expectEqual(j, after.len);
+
+        // Adding it back binds the combination exactly once more.
+        const added = (try addAccel(alloc, after, accel)).?;
+        defer alloc.free(added);
+        try testing.expect(findAccel(added, accel) != null);
+        try testing.expectEqual(after.len + 1, added.len);
+        try testing.expect((try addAccel(alloc, added, accel)) == null);
+    }
+}
+
+test "term3: property: defuse state round-trips any valid entries" {
+    const alloc = testing.allocator;
+    var p = prng(0xde_f05e_57a7e);
+    const r = p.random();
+    const charset = "abcdefghijklmnopqrstuvwxyz.-_0123456789<>";
+    for (0..2_000) |_| {
+        var entries: [5]GnomeShortcut = undefined;
+        var bufs: [5][2][24]u8 = undefined;
+        var accel_bufs: [5][96]u8 = undefined;
+        const n = r.uintLessThan(usize, entries.len + 1);
+        for (0..n) |i| {
+            var fields: [3][]const u8 = undefined;
+            for (0..2) |f| {
+                const len = 1 + r.uintLessThan(usize, 20);
+                for (bufs[i][f][0..len]) |*c| c.* = charset[r.uintLessThan(usize, charset.len - 2)];
+                fields[f] = bufs[i][f][0..len];
+            }
+            fields[2] = respell(r, &accel_bufs[i], @bitCast(r.int(u8) & 0x0f), "v");
+            entries[i] = .{ .schema = fields[0], .key = fields[1], .accel = fields[2] };
+        }
+        const text = try formatDefuseState(alloc, entries[0..n]);
+        defer alloc.free(text);
+        var it: DefuseStateIterator = .init(text);
+        for (entries[0..n]) |want| {
+            const got = it.next().?;
+            try testing.expectEqualStrings(want.schema, got.schema);
+            try testing.expectEqualStrings(want.key, got.key);
+            try testing.expectEqualStrings(want.accel, got.accel);
+        }
+        try testing.expect(it.next() == null);
+    }
+}
+
+test "term3: property: parseAccel never crashes on junk" {
+    var p = prng(0xbad_acce1);
+    const r = p.random();
+    var buf: [32]u8 = undefined;
+    const charset = "<>SuperAltShiftCtrlMod4vV \t";
+    for (0..property_runs) |_| {
+        const len = r.uintLessThan(usize, buf.len);
+        for (buf[0..len]) |*c| c.* = if (r.uintLessThan(u8, 4) == 0) r.int(u8) else charset[r.uintLessThan(usize, charset.len)];
+        if (parseAccel(buf[0..len])) |a| {
+            try testing.expect(a.key.len > 0);
+            for (a.key) |c| try testing.expect(c != '<' and c != '>' and c > ' ');
+        }
+    }
+}

@@ -29,6 +29,7 @@ const CoreConfig = configpkg.Config;
 const term3 = @import("../../../term3.zig");
 const term3_symbols_font = @import("../term3_symbols_font.zig");
 const term3_system_font = @import("../term3_system_font.zig");
+const term3_gnome_shortcuts = @import("../term3_gnome_shortcuts.zig");
 const CoreSurface = @import("../../../Surface.zig");
 
 const ext = @import("../ext.zig");
@@ -1281,6 +1282,9 @@ pub const Application = extern struct {
         // term3: sync the Settings menu checkboxes.
         self.syncSettingsActions();
 
+        // term3: the config file may have changed gtk-defuse-gnome-shortcuts.
+        self.syncGnomeShortcuts();
+
         // Load our runtime and custom CSS. If this fails then our window is
         // just stuck with the old CSS but we don't want to fail the entire
         // config change operation.
@@ -1372,6 +1376,9 @@ pub const Application = extern struct {
 
         // Setup our global shortcuts
         self.startupGlobalShortcuts();
+
+        // term3: bring GNOME's clashing shortcuts in line with the config.
+        self.syncGnomeShortcuts();
 
         // If we have any config diagnostics from loading, then we
         // show the diagnostics dialog. We show this one as a general
@@ -1511,6 +1518,10 @@ pub const Application = extern struct {
             @intFromBool(config.@"iterm-keybinds"),
         );
 
+        const defuse_gnome_state = glib.Variant.newBoolean(
+            @intFromBool(config.@"gtk-defuse-gnome-shortcuts"),
+        );
+
         const actions = [_]ext.actions.Action(Self){
             .init("new-window", actionNewWindow, null),
             .init("new-window-command", actionNewWindow, as_variant_type),
@@ -1544,6 +1555,12 @@ pub const Application = extern struct {
                 actionToggleItermKeybinds,
                 null,
                 iterm_keybinds_state,
+            ),
+            .initStateful(
+                "toggle-defuse-gnome-shortcuts",
+                actionToggleDefuseGnomeShortcuts,
+                null,
+                defuse_gnome_state,
             ),
         };
 
@@ -1981,6 +1998,43 @@ pub const Application = extern struct {
         };
     }
 
+    /// term3: Settings > "Defuse Clashing GNOME Shortcuts". Flips
+    /// `gtk-defuse-gnome-shortcuts`, removes or restores the GNOME shortcuts
+    /// right away, and saves the choice to the config file.
+    fn actionToggleDefuseGnomeShortcuts(
+        action: *gio.SimpleAction,
+        _: ?*glib.Variant,
+        self: *Self,
+    ) callconv(.c) void {
+        const state = action.as(gio.Action).getState() orelse return;
+        defer state.unref();
+        const bool_variant_type = glib.ext.VariantType.newFor(bool);
+        defer bool_variant_type.free();
+        if (state.isOfType(bool_variant_type) == 0) return;
+        const new_val = state.getBoolean() == 0;
+
+        action.setState(glib.Variant.newBoolean(@intFromBool(new_val)));
+        self.private().config.getMut().@"gtk-defuse-gnome-shortcuts" = new_val;
+        self.syncGnomeShortcuts();
+
+        persistConfigBool(
+            self.allocator(),
+            "gtk-defuse-gnome-shortcuts",
+            new_val,
+        ) catch |err| {
+            log.warn("failed to persist gtk-defuse-gnome-shortcuts setting: {s}", .{@errorName(err)});
+        };
+    }
+
+    /// term3: remove or restore GNOME's clashing shortcuts to match
+    /// `gtk-defuse-gnome-shortcuts`. Idempotent; see term3_gnome_shortcuts.zig.
+    fn syncGnomeShortcuts(self: *Self) void {
+        term3_gnome_shortcuts.apply(
+            self.allocator(),
+            self.private().config.get().@"gtk-defuse-gnome-shortcuts",
+        );
+    }
+
     /// term3: keep the Settings menu checkboxes in sync with the config
     /// after a reload (e.g. the config file was edited by hand).
     fn syncSettingsActions(self: *Self) void {
@@ -1991,6 +2045,7 @@ pub const Application = extern struct {
             .{ "toggle-inhibit-system-shortcuts", config.@"gtk-inhibit-system-shortcuts" },
             .{ "toggle-copy-on-select", config.@"copy-on-select" != .none },
             .{ "toggle-iterm-keybinds", config.@"iterm-keybinds" },
+            .{ "toggle-defuse-gnome-shortcuts", config.@"gtk-defuse-gnome-shortcuts" },
         };
         for (entries) |entry| {
             const action = action_map.lookupAction(entry[0]) orelse continue;
